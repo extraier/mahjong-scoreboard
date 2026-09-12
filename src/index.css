@@ -16,16 +16,15 @@ body,
   margin: 0;
   padding: 0;
   background-color: #f0fdf4;
-  /* min-height (not height) — lets the shell grow on short viewports
-     instead of clipping content. 100dvh = dynamic viewport on iOS so
-     the URL bar showing/hiding does not break the layout. */
-  min-height: 100dvh;
-  min-height: 100vh;
-}
-
-html,
-body {
-  overflow: hidden; /* prevent body bounce-scroll on iOS */
+  /* Lock to viewport. min-height alone lets body grow when content
+     is taller than viewport, which breaks the bottom nav position on
+     Android WebView. height: 100dvh keeps the shell pinned to the
+     physical screen; inner <main> gets the remaining space and is
+     allowed to overflow (not scroll) so the whole tab is visible
+     without internal scroll on a single screen. */
+  height: 100dvh;
+  height: 100vh;
+  overflow: hidden;
 }
 
 body {
@@ -42,28 +41,29 @@ body {
    scroll region. Header and nav are in flow at their natural height.
    ------------------------------------------------------------ */
 .app-shell {
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  /* Hard lock to viewport so the 1fr main row is FORCED to fill the
-     remaining space (not just its content height). Inner <main> has
-     min-height:0 + overflow-y:auto, so when its content is taller
-     than 1fr, it scrolls internally — no overlap with nav, no
-     page-level overflow. Falls back from dvh to vh on older iOS. */
+  display: flex;
+  flex-direction: column;
+  /* Hard lock to viewport so the middle content is constrained to
+     the remaining space. Flex (not Grid) is used because CSS Grid
+     items with min-height:0 + 1fr track get implicit overflow:auto
+     applied by browsers — which causes the middle content to scroll
+     internally. Flex children don't have this behavior. */
   height: 100dvh;
   height: 100vh;
   background-color: #f0fdf4;
 }
 
 .app-header {
-  position: sticky; /* still useful if user scrolls a tall page */
-  top: 0;
+  /* Top bar of the app shell. No scrolling happens anywhere, so the
+     sticky is redundant; we use a normal grid row. */
   z-index: 30;
   background-color: #064e3b;
   color: white;
-  padding: 1rem;
-  /* safe-area inset for notch / status bar */
-  padding-top: max(1rem, env(safe-area-inset-top));
-  /* horizontal safe area for display cutouts */
+  padding: 0.75rem 1rem;
+  /* safe-area inset for notch / status bar — gives Chinese OEM phones
+     (MIUI, MagicOS, EMUI) room for their tall status bars. Always
+     include a minimum of 1rem so the title doesn't crowd the top. */
+  padding-top: max(0.75rem, env(safe-area-inset-top));
   padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   border-bottom: 4px solid #022c22;
@@ -75,15 +75,16 @@ body {
 }
 
 .app-content {
-  /* Only this region scrolls. min-height:0 is required so the grid
-     item can shrink below its content's intrinsic height. */
+  /* Middle content — flex: 1 takes remaining space after header & nav.
+     No internal scroll (as requested). Content that overflows the
+     available space is clipped by overflow:hidden; the user is
+     expected to switch tabs if a tab's content is too dense for
+     their viewport. */
+  flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  /* leave room for the in-flow bottom nav + safe area */
-  padding: 1rem;
-  padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
-  padding-bottom: 1.5rem;
+  overflow: hidden;
+  padding: 0.75rem;
+  padding-inline: max(0.75rem, env(safe-area-inset-left), env(safe-area-inset-right));
   /* Constrain content width on tablets/desktop so tiles + score
      numbers stay readable; full width on phones. */
   width: 100%;
