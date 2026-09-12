@@ -30,3 +30,6 @@ pnpm-debug.log*
 tsconfig.app.tsbuildinfo
 tsconfig.node.tsbuildinfo
 .vercel
+
+# Keystore + gradle local props (already excluded via *.jks / *.keystore)
+gradle.properties.local

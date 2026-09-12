@@ -2,6 +2,16 @@
 export default {
   content: ['./index.html', './src/**/*.{ts,tsx}'],
   theme: {
+    screens: {
+      // Add xs (480px) breakpoint between default (0px) and sm (640px).
+      // Lets the app use a denser tile grid on small phones.
+      xs: '480px',
+      sm: '640px',
+      md: '768px',
+      lg: '1024px',
+      xl: '1280px',
+      '2xl': '1536px',
+    },
     extend: {
       // Pad safe area insets, accessible as Tailwind classes e.g. pb-safe-bottom
       padding: {

@@ -1,4 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#FFFFFF</color>
+    <!-- Adaptive icon background color: emerald-950 brand color (#064e3b).
+         Defined here (separate from colors.xml) because the adaptive-icon
+         XML references it directly via @color/ic_launcher_background. -->
+    <color name="ic_launcher_background">#064e3b</color>
 </resources>

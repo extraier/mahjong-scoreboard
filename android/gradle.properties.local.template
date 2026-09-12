@@ -1,0 +1,9 @@
+# Mahjong scoreboard keystore credentials.
+# These are pulled from macOS Keychain at build time via the helper script.
+# Never commit this file with values; the .gitignore rule below prevents it.
+#
+# To regenerate passwords:
+#   security add-generic-password -U -a extraier -s mahjong-scoreboard.STORE_PW -w
+#   security add-generic-password -U -a extraier -s mahjong-scoreboard.KEY_PW   -w
+MAHJONG_STORE_PW=
+MAHJONG_KEY_PW=

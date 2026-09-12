@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+// Load keystore credentials from gradle.properties.local (gitignored).
+// To set up: cp android/gradle.properties.local.template android/gradle.properties.local
+// and fill in MAHJONG_STORE_PW / MAHJONG_KEY_PW (or regenerate via scripts/generate-keystore.sh).
+def keystorePropsFile = rootProject.file("gradle.properties.local")
+def keystoreProps = new Properties()
+if (keystorePropsFile.exists()) {
+    keystorePropsFile.withInputStream { keystoreProps.load(it) }
+}
+
 android {
     namespace "com.comparetiger.mahjongscoreboard"
     compileSdk rootProject.ext.compileSdkVersion
@@ -16,10 +25,26 @@ android {
             ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        release {
+            if (keystoreProps.containsKey('MAHJONG_STORE_PW')) {
+                storeFile file(System.getenv('MAHJONG_KEYSTORE_PATH') ?: '../../mahjong-release.jks')
+                // PKCS12 keystores require the same password for store and key.
+                // (Java's keytool ignores -keypass on PKCS12 with a warning.)
+                // Generate with: scripts/generate-keystore.sh
+                storePassword keystoreProps['MAHJONG_STORE_PW']
+                keyAlias 'mahjong'
+                keyPassword keystoreProps['MAHJONG_STORE_PW']
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (keystoreProps.containsKey('MAHJONG_STORE_PW')) {
+                signingConfig signingConfigs.release
+            }
         }
     }
 }

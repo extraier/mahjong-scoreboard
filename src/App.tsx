@@ -289,6 +289,9 @@ const App = () => {
     const [selectedTiles, setSelectedTiles] = useState<TileId[]>([]);
     const [selectedFlowers, setSelectedFlowers] = useState<TileId[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [openSection, setOpenSection] = useState<'mode' | 'players' | 'ai' | 'danger' | null>('mode');
+    const toggleSection = (s: 'mode' | 'players' | 'ai' | 'danger') => setOpenSection(openSection === s ? null : s);
+    
     const [mode, setMode] = useState<'select' | 'camera'>('select');
 
     const requiredTileCount = gameMode === 'TW' ? 17 : 14;
@@ -375,22 +378,44 @@ const App = () => {
         const groups = [{ prefix: 'W', count: 9 }, { prefix: 'T', count: 9 }, { prefix: 'S', count: 9 }];
         const honors = ['F1', 'F2', 'F3', 'F4', 'J1', 'J2', 'J3'];
         const flowers = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8'];
+        // Responsive grid:
+        //  - very narrow (<360px): 6 cols
+        //  - normal phones (360-639px): 7 cols
+        //  - sm+ (>=640px): 9 cols
+        // Honors: 7 tiles → max 7 cols. Flowers: 8 tiles → max 8 cols.
+        const tileGrid = 'grid grid-cols-6 xs:grid-cols-7 sm:grid-cols-9 gap-1';
+        const honorsGrid = 'grid grid-cols-7 sm:grid-cols-7 gap-1';
+        const flowerGrid = 'grid grid-cols-8 gap-1';
+        const tileWrap = 'min-h-[44px] flex items-stretch';
+        const tileInner = 'mahjong-tile-sm aspect-[3/4] w-full';
         return (
             <div className="space-y-3">
                 {groups.map(g => (
-                    <div key={g.prefix} className="grid grid-cols-9 gap-1.5">
-                        {[...Array(g.count)].map((_, i) => <BuiltInTile key={i} id={`${g.prefix}${i+1}`} className="mahjong-tile-sm aspect-[3/4]" onClick={() => handleTileClick(`${g.prefix}${i+1}`)} />)}
+                    <div key={g.prefix} className={tileGrid}>
+                        {[...Array(g.count)].map((_, i) => (
+                            <div key={i} className={tileWrap}>
+                                <BuiltInTile id={`${g.prefix}${i+1}`} className={tileInner} onClick={() => handleTileClick(`${g.prefix}${i+1}`)} />
+                            </div>
+                        ))}
                     </div>
                 ))}
-                <div className="grid grid-cols-9 gap-1.5 pt-1 border-t border-emerald-200/50">
-                    {honors.map(h => <BuiltInTile key={h} id={h} className="mahjong-tile-sm aspect-[3/4]" onClick={() => handleTileClick(h)} />)}
+                <div className={`${honorsGrid} pt-1 border-t border-emerald-200/50`}>
+                    {honors.map(h => (
+                        <div key={h} className={tileWrap}>
+                            <BuiltInTile id={h} className={tileInner} onClick={() => handleTileClick(h)} />
+                        </div>
+                    ))}
                 </div>
                 <div className="pt-2 mt-2 border-t border-emerald-200/50">
                     <span className="text-[10px] font-bold text-emerald-800 tracking-widest uppercase block mb-1.5">花牌 (點擊切換)</span>
-                    <div className="grid grid-cols-8 gap-1.5">
+                    <div className={flowerGrid}>
                         {flowers.map(h => {
                             const isSel = selectedFlowers.includes(h);
-                            return <div key={h} className={`transition-all ${isSel ? 'ring-2 ring-pink-500 scale-[0.85] opacity-50 rounded bg-pink-100' : ''}`}><BuiltInTile id={h} className="mahjong-tile-sm aspect-[3/4]" onClick={() => handleTileClick(h)} /></div>;
+                            return (
+                                <div key={h} className={`${tileWrap} transition-all ${isSel ? 'ring-2 ring-pink-500 scale-[0.85] opacity-50 rounded bg-pink-100' : ''}`}>
+                                    <BuiltInTile id={h} className={tileInner} onClick={() => handleTileClick(h)} />
+                                </div>
+                            );
                         })}
                     </div>
                 </div>
