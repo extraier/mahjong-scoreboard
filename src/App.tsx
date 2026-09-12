@@ -485,7 +485,7 @@ const App = () => {
     };
 
     return (
-        <div className="flex flex-col h-full overflow-hidden bg-emerald-50">
+        <div className="flex flex-col h-screen overflow-hidden bg-emerald-50">
             <header
                 className="bg-emerald-950 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center border-b-4 border-emerald-900 shrink-0"
                 style={{ paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))' }}

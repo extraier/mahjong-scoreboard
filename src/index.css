@@ -1,20 +1,24 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&family=Noto+Serif+HK:wght@700;900&display=swap');
 
-/* Lock the app to exactly one viewport — no body scroll, header + bottom nav stay fixed. */
+/* Lock the app to the full physical viewport — body fills the screen edge on iOS via viewport-fit=cover. */
 html, body, #root {
-  height: 100dvh; /* dynamic viewport = shrinks when mobile address bar shows/hides */
-  height: 100vh;  /* fallback for older browsers */
   margin: 0;
   padding: 0;
-  overflow: hidden;
   background-color: #f0fdf4;
+  /* Lock height to viewport. h-screen in App.tsx takes over inside #root. */
+  height: 100vh;
+  height: 100dvh; /* modern fallback: dynamic viewport on iOS */
+}
+
+html, body {
+  /* Prevent body scroll entirely — only the inner <main> scrolls */
+  overflow: hidden;
 }
 
 body {
   font-family: 'Noto Sans HK', -apple-system, BlinkMacSystemFont, 'PingFang TC', 'PingFang HK', 'Microsoft JhengHei', sans-serif;
   -webkit-tap-highlight-color: transparent;
   -webkit-text-size-adjust: 100%;
-  /* Prevent rubber-band overscroll on iOS that would scroll the locked body */
   overscroll-behavior: none;
   touch-action: manipulation;
 }
