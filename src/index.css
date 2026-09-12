@@ -1,18 +1,31 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&family=Noto+Serif+HK:wght@700;900&display=swap');
 
-/* Lock the app to the full physical viewport — body fills the screen edge on iOS via viewport-fit=cover. */
-html, body, #root {
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   APP SHELL — three-row CSS grid that fills the dynamic viewport.
+   No fixed positioning. The nav is in flow; main scrolls inside
+   its grid cell with min-height:0 so it can actually shrink.
+   ============================================================ */
+
+html,
+body,
+#root {
   margin: 0;
   padding: 0;
   background-color: #f0fdf4;
-  /* Lock height to viewport. h-screen in App.tsx takes over inside #root. */
-  height: 100vh;
-  height: 100dvh; /* modern fallback: dynamic viewport on iOS */
+  /* min-height (not height) — lets the shell grow on short viewports
+     instead of clipping content. 100dvh = dynamic viewport on iOS so
+     the URL bar showing/hiding does not break the layout. */
+  min-height: 100dvh;
+  min-height: 100vh;
 }
 
-html, body {
-  /* Prevent body scroll entirely — only the inner <main> scrolls */
-  overflow: hidden;
+html,
+body {
+  overflow: hidden; /* prevent body bounce-scroll on iOS */
 }
 
 body {
@@ -21,14 +34,122 @@ body {
   -webkit-text-size-adjust: 100%;
   overscroll-behavior: none;
   touch-action: manipulation;
+  color: #1e293b;
 }
 
+/* ------------------------------------------------------------
+   App shell: header / main / nav, three rows. main is the only
+   scroll region. Header and nav are in flow at their natural height.
+   ------------------------------------------------------------ */
+.app-shell {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  /* Hard lock to viewport so the 1fr main row is FORCED to fill the
+     remaining space (not just its content height). Inner <main> has
+     min-height:0 + overflow-y:auto, so when its content is taller
+     than 1fr, it scrolls internally — no overlap with nav, no
+     page-level overflow. Falls back from dvh to vh on older iOS. */
+  height: 100dvh;
+  height: 100vh;
+  background-color: #f0fdf4;
+}
+
+.app-header {
+  position: sticky; /* still useful if user scrolls a tall page */
+  top: 0;
+  z-index: 30;
+  background-color: #064e3b;
+  color: white;
+  padding: 1rem;
+  /* safe-area inset for notch / status bar */
+  padding-top: max(1rem, env(safe-area-inset-top));
+  /* horizontal safe area for display cutouts */
+  padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  border-bottom: 4px solid #022c22;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.app-content {
+  /* Only this region scrolls. min-height:0 is required so the grid
+     item can shrink below its content's intrinsic height. */
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  /* leave room for the in-flow bottom nav + safe area */
+  padding: 1rem;
+  padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  padding-bottom: 1.5rem;
+  /* Constrain content width on tablets/desktop so tiles + score
+     numbers stay readable; full width on phones. */
+  width: 100%;
+  max-width: 36rem;
+  margin-inline: auto;
+}
+
+.app-nav {
+  /* In-flow, not fixed. Takes its natural height so the main
+     region above always clears it. */
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.25rem;
+  background-color: rgba(255, 255, 255, 0.97);
+  backdrop-filter: blur(8px);
+  border-top: 1px solid #d1fae5;
+  padding: 0.5rem;
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+  padding-inline: max(0.5rem, env(safe-area-inset-left), env(safe-area-inset-right));
+  flex-shrink: 0;
+  z-index: 30;
+}
+
+.app-nav-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  min-height: 44px; /* WCAG minimum touch target */
+  padding: 0.5rem 0.25rem;
+  border-radius: 0.75rem;
+  background: transparent;
+  border: 0;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.app-nav-button:hover {
+  background-color: #ecfdf5;
+}
+
+.app-nav-button[aria-current='page'] {
+  background-color: #d1fae5;
+  color: #064e3b;
+  font-weight: 900;
+}
+
+.app-nav-button:focus-visible {
+  outline: 2px solid #059669;
+  outline-offset: 2px;
+}
+
+/* ------------------------------------------------------------
+   Mahjong tile artwork
+   ------------------------------------------------------------ */
 .scrollbar-hide::-webkit-scrollbar { display: none; }
 
 .mahjong-tile-3d {
   background-color: #fdfcf8;
   border-radius: 6px;
-  box-shadow: 2px 3px 0px #059669, 3px 5px 6px rgba(0,0,0,0.15);
+  box-shadow: 2px 3px 0px #059669, 3px 5px 6px rgba(0, 0, 0, 0.15);
   transition: all 0.1s;
   border: 1px solid #e2e8f0;
   user-select: none;
@@ -38,19 +159,20 @@ body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  aspect-ratio: 3 / 4;
 }
 .mahjong-tile-3d:active {
   transform: translateY(3px) translateX(2px);
-  box-shadow: 0px 0px 0px #059669, 1px 2px 3px rgba(0,0,0,0.1);
+  box-shadow: 0px 0px 0px #059669, 1px 2px 3px rgba(0, 0, 0, 0.1);
 }
 
 .mahjong-tile-sm {
-  box-shadow: 1px 2px 0px #059669, 2px 3px 4px rgba(0,0,0,0.1);
+  box-shadow: 1px 2px 0px #059669, 2px 3px 4px rgba(0, 0, 0, 0.1);
   border-radius: 4px;
 }
 .mahjong-tile-sm:active {
   transform: translateY(2px) translateX(1px);
-  box-shadow: 0px 0px 0px #059669, 1px 1px 2px rgba(0,0,0,0.1);
+  box-shadow: 0px 0px 0px #059669, 1px 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .mj-font { font-family: 'Noto Serif HK', serif; font-weight: 900; }
@@ -59,10 +181,15 @@ body {
 .mj-blue { fill: #0284c7; color: #0284c7; }
 .mj-black { fill: #1e293b; color: #1e293b; }
 
+/* Hide scrollbar but keep scrollability */
+.scrollbar-hide {
+  scrollbar-width: none;
+}
+
 .ad-placeholder {
   min-height: 50px;
-  background: rgba(0,0,0,0.03);
-  border: 1px dashed rgba(0,0,0,0.1);
+  background: rgba(0, 0, 0, 0.03);
+  border: 1px dashed rgba(0, 0, 0, 0.1);
   border-radius: 12px;
   display: flex;
   align-items: center;

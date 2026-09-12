@@ -6,6 +6,23 @@ declare global {
   }
 }
 
+// ============ TYPES ============
+type Player = { id: number; name: string; score: number };
+type TileId = string;             // 'W1'..'W9', 'T1'..'T9', 'S1'..'S9', 'F1'..'F4', 'J1'..'J3', 'H1'..'H8'
+type GameMode = 'HK' | 'TW';
+type Tab = 'dice' | 'calc' | 'score' | 'settings';
+type DiceMode = 'auto' | 'manual';
+type AiResult = {
+  valid?: boolean;
+  error?: string;
+  handName?: string;
+  handFan?: number;
+  flowerFan?: number;
+  fan?: number;
+  details?: string[];
+};
+type HistoryEntry = { id: number; text: string; time: string };
+
 const AdSenseWidget = () => {
     useEffect(() => {
         try { if (window.adsbygoogle) { window.adsbygoogle.push({}); } } catch (e) { console.error("AdSense Error:", e); }
@@ -221,9 +238,9 @@ const MahjongEngine = {
 };
 
 const App = () => {
-    const [gameMode, setGameMode] = useState(localStorage.getItem('mahjong_mode') || 'HK'); 
-    const [baseScore, setBaseScore] = useState(parseInt(localStorage.getItem('tw_base')||'100')); 
-    const [taiScore, setTaiScore] = useState(parseInt(localStorage.getItem('tw_tai')||'50')); 
+    const [gameMode, setGameMode] = useState<GameMode>((localStorage.getItem('mahjong_mode') as GameMode) || 'HK');
+    const [baseScore, setBaseScore] = useState<number>(parseInt(localStorage.getItem('tw_base') || '100'));
+    const [taiScore, setTaiScore] = useState<number>(parseInt(localStorage.getItem('tw_tai') || '50'));
 
     const defaultHkScores = [1, 2, 4, 8, 16, 32, 64, 128, 192, 256];
     const [hkScores, setHkScores] = useState(() => {
@@ -231,52 +248,48 @@ const App = () => {
         return saved ? JSON.parse(saved) : defaultHkScores;
     });
 
-    const [activeTab, setActiveTab] = useState('dice');
-    
-    // ⭐ 名單管理
-    const [players, setPlayers] = useState(() => {
+    const [activeTab, setActiveTab] = useState<Tab>('dice');
+
+    // Players + selection
+    const [players, setPlayers] = useState<Player[]>(() => {
         const saved = localStorage.getItem('players_list');
-        return saved ? JSON.parse(saved) : [
-            { id: 1, name: '玩家 A', score: 0 }, { id: 2, name: '玩家 B', score: 0 },
-            { id: 3, name: '玩家 C', score: 0 }, { id: 4, name: '玩家 D', score: 0 }
+        if (saved) try { return JSON.parse(saved); } catch { /* fall through */ }
+        return [
+            { id: 1, name: '玩家 A', score: 0 },
+            { id: 2, name: '玩家 B', score: 0 },
+            { id: 3, name: '玩家 C', score: 0 },
+            { id: 4, name: '玩家 D', score: 0 },
         ];
     });
-    const [newPlayerName, setNewPlayerName] = useState("");
-    // 編輯模式狀態
-    const [editingPlayerId, setEditingPlayerId] = useState(null);
-    const [editingName, setEditingName] = useState("");
+    const [newPlayerName, setNewPlayerName] = useState<string>('');
+    const [editingPlayerId, setEditingPlayerId] = useState<number | null>(null);
+    const [editingName, setEditingName] = useState<string>('');
 
     useEffect(() => { localStorage.setItem('players_list', JSON.stringify(players)); }, [players]);
 
-    const [activePlayerIds, setActivePlayerIds] = useState(() => players.slice(0,4).map(p=>p.id));
-
-    const [dealerId, setDealerId] = useState(players[0]?.id || 1);
-    const [roundWind, setRoundWind] = useState('東');
-    const [streak, setStreak] = useState(0);
-    
-    const [handFan, setHandFan] = useState(gameMode === 'TW' ? 0 : 3);
-    const [flowerFan, setFlowerFan] = useState(0);
-    
-    const [winnerId, setWinnerId] = useState(activePlayerIds[0]);
-    const [loserId, setLoserId] = useState(activePlayerIds[1]);
-    const [isSelfDraw, setIsSelfDraw] = useState(false);
-    
-    const [diceMode, setDiceMode] = useState('auto'); 
-    const [manualDiceSum, setManualDiceSum] = useState("");
-    const [diceValues, setDiceValues] = useState([1, 1, 1]);
-    const [isRolling, setIsRolling] = useState(false);
-    const [history, setHistory] = useState([]);
-    
-    const [mode, setMode] = useState('select'); 
-    const [apiKey, setApiKey] = useState(localStorage.getItem('gemini_api_key') || "");
-    const [tempApiKey, setTempApiKey] = useState(apiKey);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [aiResult, setAiResult] = useState(null);
-    const [previewImage, setPreviewImage] = useState(null);
-    const fileInputRef = useRef(null);
-    
-    const [selectedTiles, setSelectedTiles] = useState([]);
-    const [selectedFlowers, setSelectedFlowers] = useState([]);
+    const [activePlayerIds, setActivePlayerIds] = useState<number[]>(() => players.slice(0, 4).map(p => p.id));
+    const [dealerId, setDealerId] = useState<number>(players[0]?.id ?? 1);
+    const [roundWind, setRoundWind] = useState<string>('東');
+    const [streak, setStreak] = useState<number>(0);
+    const [handFan, setHandFan] = useState<number>(gameMode === 'TW' ? 0 : 3);
+    const [flowerFan, setFlowerFan] = useState<number>(0);
+    const [winnerId, setWinnerId] = useState<number | undefined>(activePlayerIds[0]);
+    const [loserId, setLoserId] = useState<number | undefined>(activePlayerIds[1]);
+    const [isSelfDraw, setIsSelfDraw] = useState<boolean>(false);
+    const [diceMode, setDiceMode] = useState<DiceMode>('auto');
+    const [manualDiceSum, setManualDiceSum] = useState<string>('');
+    const [diceValues, setDiceValues] = useState<number[]>([1, 1, 1]);
+    const [isRolling, setIsRolling] = useState<boolean>(false);
+    const [history, setHistory] = useState<HistoryEntry[]>([]);
+    const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_key') || '');
+    const [tempApiKey, setTempApiKey] = useState<string>('');
+    const [aiResult, setAiResult] = useState<AiResult | null>(null);
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
+    const [selectedTiles, setSelectedTiles] = useState<TileId[]>([]);
+    const [selectedFlowers, setSelectedFlowers] = useState<TileId[]>([]);
+    const fileInputRef = useRef<HTMLInputElement | null>(null);
+    const [mode, setMode] = useState<'select' | 'camera'>('select');
 
     const requiredTileCount = gameMode === 'TW' ? 17 : 14;
 
@@ -321,7 +334,17 @@ const App = () => {
         } finally { setIsAnalyzing(false); }
     };
 
-    const handleFile = (e) => { const f = e.target.files[0]; if(f){ const r = new FileReader(); r.onloadend = () => { setPreviewImage(r.result); analyzeWithAI(r.result); }; r.readAsDataURL(f); } };
+    const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const f = e.target.files?.[0];
+        if (!f) return;
+        const r = new FileReader();
+        r.onloadend = () => {
+            const result = typeof r.result === 'string' ? r.result : '';
+            setPreviewImage(result);
+            if (result) analyzeWithAI(result);
+        };
+        r.readAsDataURL(f);
+    };
 
     const handleTileClick = (tileId) => {
         if (tileId.startsWith('H')) {
@@ -485,11 +508,8 @@ const App = () => {
     };
 
     return (
-        <div className="flex flex-col h-screen overflow-hidden bg-emerald-50">
-            <header
-                className="bg-emerald-950 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center border-b-4 border-emerald-900 shrink-0"
-                style={{ paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))' }}
-            >
+        <div className="app-shell">
+            <header className="app-header">
                 <div>
                     <div className="flex items-center gap-2">
                         <span className="bg-red-500 px-1.5 py-0.5 rounded text-[10px] font-black italic shadow">PRO</span>
@@ -502,10 +522,7 @@ const App = () => {
                 <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20" title="重新整理"><Icon name="rotate-ccw" size={20} /></button>
             </header>
 
-            <main
-                className="flex-1 min-h-0 overflow-y-auto max-w-md mx-auto w-full p-4 space-y-4"
-                style={{ paddingBottom: 'max(7rem, calc(6rem + env(safe-area-inset-bottom, 0px)))' }}
-            >
+            <main className="app-content space-y-4">
                 <div className="grid grid-cols-4 gap-2">
                     {getActivePlayers().map((p, idx) => {
                         const seat = ['東','南','西','北'][idx];
@@ -823,10 +840,7 @@ const App = () => {
                 </div>
             </main>
 
-            <nav
-                className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-emerald-100 px-6 py-4 flex justify-around items-center z-50"
-                style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 0px))' }}
-            >
+            <nav className="app-nav" aria-label="主選單">
                 <NavButton active={activeTab === 'dice'} icon="dices" label="開局" onClick={() => setActiveTab('dice')} />
                 <NavButton active={activeTab === 'calc'} icon="grid" label="計番" onClick={() => setActiveTab('calc')} />
                 <NavButton active={activeTab === 'score'} icon="trophy" label="結算" onClick={() => setActiveTab('score')} />
@@ -836,10 +850,16 @@ const App = () => {
     );
 };
 
-const NavButton = ({ active, icon, label, onClick }) => (
-    <button onClick={onClick} className={`flex flex-col items-center gap-1 transition-all ${active ? 'text-emerald-800 scale-110 font-black' : 'text-slate-400 font-bold'}`}>
-        <div className={`p-2 ${active ? 'bg-emerald-100 rounded-xl' : ''}`}><Icon name={icon} size={24} /></div>
-        <span className="text-[10px] tracking-widest">{label}</span>
+const NavButton = ({ active, icon, label, onClick }: { active: boolean; icon: string; label: string; onClick: () => void }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="app-nav-button"
+        aria-current={active ? 'page' : undefined}
+        aria-label={label}
+    >
+        <Icon name={icon} size={22} />
+        <span>{label}</span>
     </button>
 );
 
