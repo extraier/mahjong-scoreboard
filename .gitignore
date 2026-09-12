@@ -29,3 +29,4 @@ yarn-error.log*
 pnpm-debug.log*
 tsconfig.app.tsbuildinfo
 tsconfig.node.tsbuildinfo
+.vercel

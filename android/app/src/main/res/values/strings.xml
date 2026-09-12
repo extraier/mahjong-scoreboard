@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">麻雀神器 PRO</string>
+    <string name="title_activity_main">麻雀神器 PRO</string>
+    <string name="package_name">com.comparetiger.mahjongscoreboard</string>
+    <string name="custom_url_scheme">com.comparetiger.mahjongscoreboard</string>
+</resources>
