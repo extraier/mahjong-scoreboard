@@ -1,12 +1,22 @@
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&family=Noto+Serif+HK:wght@700;900&display=swap');
 
-body {
-  font-family: 'Noto Sans HK', -apple-system, BlinkMacSystemFont, 'PingFang TC', 'PingFang HK', 'Microsoft JhengHei', sans-serif;
+/* Lock the app to exactly one viewport — no body scroll, header + bottom nav stay fixed. */
+html, body, #root {
+  height: 100dvh; /* dynamic viewport = shrinks when mobile address bar shows/hides */
+  height: 100vh;  /* fallback for older browsers */
   margin: 0;
   padding: 0;
+  overflow: hidden;
   background-color: #f0fdf4;
+}
+
+body {
+  font-family: 'Noto Sans HK', -apple-system, BlinkMacSystemFont, 'PingFang TC', 'PingFang HK', 'Microsoft JhengHei', sans-serif;
   -webkit-tap-highlight-color: transparent;
-  overflow-x: hidden;
+  -webkit-text-size-adjust: 100%;
+  /* Prevent rubber-band overscroll on iOS that would scroll the locked body */
+  overscroll-behavior: none;
+  touch-action: manipulation;
 }
 
 .scrollbar-hide::-webkit-scrollbar { display: none; }

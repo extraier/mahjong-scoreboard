@@ -31,9 +31,7 @@ const Icon = ({ name, size = 24, className = "" }) => {
         'sparkles': <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>,
         'users': <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M16 3.13a4 4 0 0 1 0 7.75M23 21v-2a4 4 0 0 0-3-3.87M8 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z" />,
         'edit': <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>,
-        'check': <path d="M20 6L9 17l-5-5"/>,
-        'fullscreen-enter': <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/>,
-        'fullscreen-exit': <path d="M8 3v3a2 2 0 0 1-2 2H3M21 8h-3a2 2 0 0 1-2-2V3M3 16h3a2 2 0 0 1 2 2v3M16 21v-3a2 2 0 0 1 2-2h3"/>
+        'check': <path d="M20 6L9 17l-5-5"/>
     };
     return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name] || <circle cx="12" cy="12" r="10" />}</svg>;
 };
@@ -233,26 +231,7 @@ const App = () => {
         return saved ? JSON.parse(saved) : defaultHkScores;
     });
 
-    const [activeTab, setActiveTab] = useState('dice'); 
-
-    // ⭐ Fullscreen toggle (browser Fullscreen API)
-    const [isFullscreen, setIsFullscreen] = useState(!!document.fullscreenElement);
-    useEffect(() => {
-        const onChange = () => setIsFullscreen(!!document.fullscreenElement);
-        document.addEventListener('fullscreenchange', onChange);
-        return () => document.removeEventListener('fullscreenchange', onChange);
-    }, []);
-    const toggleFullscreen = async () => {
-        try {
-            if (!document.fullscreenElement) {
-                await document.documentElement.requestFullscreen();
-            } else {
-                await document.exitFullscreen();
-            }
-        } catch (e) {
-            console.warn('Fullscreen toggle failed:', e);
-        }
-    };
+    const [activeTab, setActiveTab] = useState('dice');
     
     // ⭐ 名單管理
     const [players, setPlayers] = useState(() => {
@@ -506,8 +485,11 @@ const App = () => {
     };
 
     return (
-        <div className="flex flex-col min-h-screen pb-24">
-            <header className="bg-emerald-950 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center border-b-4 border-emerald-900">
+        <div className="flex flex-col h-full overflow-hidden bg-emerald-50">
+            <header
+                className="bg-emerald-950 text-white p-4 sticky top-0 z-50 shadow-md flex justify-between items-center border-b-4 border-emerald-900 shrink-0"
+                style={{ paddingTop: 'max(1rem, env(safe-area-inset-top, 0px))' }}
+            >
                 <div>
                     <div className="flex items-center gap-2">
                         <span className="bg-red-500 px-1.5 py-0.5 rounded text-[10px] font-black italic shadow">PRO</span>
@@ -517,13 +499,13 @@ const App = () => {
                         {gameMode === 'HK' ? '廣東牌 14張' : '台灣牌 16張'} | {roundWind}圈 | {streak}連莊
                     </p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <button onClick={toggleFullscreen} title={isFullscreen ? '退出全螢幕' : '全螢幕'} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20"><Icon name={isFullscreen ? 'fullscreen-exit' : 'fullscreen-enter'} size={20} /></button>
-                    <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20"><Icon name="rotate-ccw" size={20} /></button>
-                </div>
+                <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20" title="重新整理"><Icon name="rotate-ccw" size={20} /></button>
             </header>
 
-            <main className="flex-1 max-w-md mx-auto w-full p-4 space-y-4">
+            <main
+                className="flex-1 min-h-0 overflow-y-auto max-w-md mx-auto w-full p-4 space-y-4"
+                style={{ paddingBottom: 'max(7rem, calc(6rem + env(safe-area-inset-bottom, 0px)))' }}
+            >
                 <div className="grid grid-cols-4 gap-2">
                     {getActivePlayers().map((p, idx) => {
                         const seat = ['東','南','西','北'][idx];
@@ -841,7 +823,10 @@ const App = () => {
                 </div>
             </main>
 
-            <nav className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-emerald-100 px-6 py-4 flex justify-around items-center z-50 pb-8">
+            <nav
+                className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-emerald-100 px-6 py-4 flex justify-around items-center z-50"
+                style={{ paddingBottom: 'max(2rem, env(safe-area-inset-bottom, 0px))' }}
+            >
                 <NavButton active={activeTab === 'dice'} icon="dices" label="開局" onClick={() => setActiveTab('dice')} />
                 <NavButton active={activeTab === 'calc'} icon="grid" label="計番" onClick={() => setActiveTab('calc')} />
                 <NavButton active={activeTab === 'score'} icon="trophy" label="結算" onClick={() => setActiveTab('score')} />
