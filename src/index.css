@@ -16,13 +16,14 @@ body,
   margin: 0;
   padding: 0;
   background-color: #f0fdf4;
-  /* Lock to viewport. min-height alone lets body grow when content
-     is taller than viewport, which breaks the bottom nav position on
-     Android WebView. height: 100dvh keeps the shell pinned to the
-     physical screen; inner <main> gets the remaining space and is
-     allowed to overflow (not scroll) so the whole tab is visible
-     without internal scroll on a single screen. */
-  height: 100dvh;
+  /* Lock to the visible viewport. Use 100svh (small viewport height,
+     iOS 15+) which equals the URL-bar-VISIBLE state — the SAFE choice
+     so the body never extends under the iOS Safari bottom URL bar
+     (which would hide the bottom nav). Fall back to 100vh for older
+     iOS / Android which reports the smaller visual viewport.
+     100dvh is intentionally NOT used — it reports the URL-bar-HIDDEN
+     state (larger viewport) and pushes the nav under the URL bar. */
+  height: 100svh;
   height: 100vh;
   overflow: hidden;
 }
@@ -47,8 +48,10 @@ body {
      the remaining space. Flex (not Grid) is used because CSS Grid
      items with min-height:0 + 1fr track get implicit overflow:auto
      applied by browsers — which causes the middle content to scroll
-     internally. Flex children don't have this behavior. */
-  height: 100dvh;
+     internally. Flex children don't have this behavior.
+     100svh = URL-bar-VISIBLE state so the shell stays in the visible
+     viewport (doesn't extend under iOS Safari's bottom URL bar). */
+  height: 100svh;
   height: 100vh;
   background-color: #f0fdf4;
 }
