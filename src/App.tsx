@@ -35,7 +35,7 @@ const AdSenseWidget = () => {
     );
 };
 
-const Icon = ({ name, size = 24, className = "" }) => {
+const Icon = ({ name, size = 24, className = "", strokeWidth = 2 }) => {
     const paths = {
         'dices': <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />,
         'camera': <><rect x="3" y="4" width="18" height="15" rx="2" /><circle cx="12" cy="11.5" r="3.5" /></>,
@@ -43,6 +43,12 @@ const Icon = ({ name, size = 24, className = "" }) => {
         'trophy': <path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6M18 9h1.5a2.5 2.5 0 0 0 0-5H18M4 22h16M10 14.66V17c0 .55.45 1 1 1h2c.55 0 1-.45 1-1v-2.34c3.37-.4 6-3.24 6-6.66V4H4v4c0 3.42 2.63 6.26 6 6.66z" />,
         'settings': <circle cx="12" cy="12" r="3" />,
         'rotate-ccw': <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />,
+        'refresh': (<>
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+            <path d="M16 16h5v5" />
+        </>),
         'trash': <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />,
         'grid': <><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></>,
         'sparkles': <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>,
@@ -50,7 +56,7 @@ const Icon = ({ name, size = 24, className = "" }) => {
         'edit': <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>,
         'check': <path d="M20 6L9 17l-5-5"/>
     };
-    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name] || <circle cx="12" cy="12" r="10" />}</svg>;
+    return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className}>{paths[name] || <circle cx="12" cy="12" r="10" />}</svg>;
 };
 
 const DiceFace = ({ value, isRolling }) => {
@@ -550,7 +556,10 @@ const App = () => {
                         {gameMode === 'HK' ? '廣東牌 14張' : '台灣牌 16張'} | {roundWind}圈 | {streak}連莊
                     </p>
                 </div>
-                <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20" title="重新整理"><Icon name="rotate-ccw" size={20} /></button>
+                <button onClick={() => window.location.reload()} className="flex items-center gap-1 px-3 py-2 bg-white/20 hover:bg-white/30 border border-white/30 rounded-xl text-white shadow-sm transition-all active:scale-95" title="重新整理整個遊戲（重置所有分數）" aria-label="重新整理">
+                    <Icon name="refresh" size={22} strokeWidth={2.5} />
+                    <span className="text-xs font-black tracking-wider">重置</span>
+                </button>
             </header>
 
             <main className="app-content space-y-2 pt-1.5">
