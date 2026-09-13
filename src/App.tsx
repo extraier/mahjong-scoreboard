@@ -378,18 +378,20 @@ const App = () => {
         const groups = [{ prefix: 'W', count: 9 }, { prefix: 'T', count: 9 }, { prefix: 'S', count: 9 }];
         const honors = ['F1', 'F2', 'F3', 'F4', 'J1', 'J2', 'J3'];
         const flowers = ['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'H7', 'H8'];
-        // Responsive grid:
-        //  - very narrow (<360px): 6 cols
-        //  - normal phones (360-639px): 7 cols
-        //  - sm+ (>=640px): 9 cols
-        // Honors: 7 tiles → max 7 cols. Flowers: 8 tiles → max 8 cols.
-        const tileGrid = 'grid grid-cols-6 xs:grid-cols-7 sm:grid-cols-9 gap-1';
-        const honorsGrid = 'grid grid-cols-7 sm:grid-cols-7 gap-1';
-        const flowerGrid = 'grid grid-cols-8 gap-1';
-        const tileWrap = 'min-h-[44px] flex items-stretch';
-        const tileInner = 'mahjong-tile-sm aspect-[3/4] w-full';
+        // Responsive grid (densely packed to fit ALL tiles on small phones):
+        //  - very narrow (<360px): 9 cols, square tiles, tight gap
+        //  - normal phones (360-639px): 9 cols, square tiles
+        //  - sm+ (>=640px): 9 cols, 3:4 aspect (roomier)
+        // 9 cols at 588px width: tile = (588-24-32)/9 = ~59px → still tappable
+        const tileGrid = 'grid grid-cols-9 gap-1';
+        const honorsGrid = 'grid grid-cols-9 gap-1';
+        const flowerGrid = 'grid grid-cols-9 gap-1';
+        const tileWrap = 'min-h-[40px] flex items-stretch';
+        // aspect-[3/4] on small screens makes tiles too tall. Use aspect-square
+        // so 9 columns of tiles fit in the available height (5 rows × ~50px = 250px).
+        const tileInner = 'mahjong-tile-sm aspect-square w-full';
         return (
-            <div className="space-y-3">
+            <div className="space-y-1.5">
                 {groups.map(g => (
                     <div key={g.prefix} className={tileGrid}>
                         {[...Array(g.count)].map((_, i) => (
@@ -406,8 +408,8 @@ const App = () => {
                         </div>
                     ))}
                 </div>
-                <div className="pt-2 mt-2 border-t border-emerald-200/50">
-                    <span className="text-[10px] font-bold text-emerald-800 tracking-widest uppercase block mb-1.5">花牌 (點擊切換)</span>
+                <div className="pt-1 border-t border-emerald-200/50">
+                    <span className="text-[9px] font-bold text-emerald-800 tracking-widest uppercase block mb-0.5">花牌</span>
                     <div className={flowerGrid}>
                         {flowers.map(h => {
                             const isSel = selectedFlowers.includes(h);
@@ -551,18 +553,18 @@ const App = () => {
                 <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20" title="重新整理"><Icon name="rotate-ccw" size={20} /></button>
             </header>
 
-            <main className="app-content space-y-4 pt-2">
-                <div className="grid grid-cols-4 gap-2">
+            <main className="app-content space-y-2 pt-1.5">
+                <div className="grid grid-cols-4 gap-1.5">
                     {getActivePlayers().map((p, idx) => {
                         const seat = ['東','南','西','北'][idx];
                         return (
-                            <div key={p.id} onClick={() => setWinnerId(p.id)} className={`p-2 rounded-xl border-b-4 transition-all text-center relative cursor-pointer ${winnerId === p.id ? 'border-emerald-600 bg-emerald-50' : p.id === dealerId ? 'border-red-400 bg-red-50' : 'bg-white border-slate-200'}`}>
+                            <div key={p.id} onClick={() => setWinnerId(p.id)} className={`py-1 px-1 rounded-lg border-b-2 transition-all text-center relative cursor-pointer ${winnerId === p.id ? 'border-emerald-600 bg-emerald-50' : p.id === dealerId ? 'border-red-400 bg-red-50' : 'bg-white border-slate-200'}`}>
                                 {p.id === dealerId && <span className="absolute top-0.5 right-1 bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black shadow-sm">莊</span>}
-                                <div className="flex items-center justify-center gap-1 mb-0.5">
+                                <div className="flex items-center justify-center gap-1 mb-0">
                                     <span className="text-[8px] bg-slate-200 px-1 rounded text-slate-500 font-bold">{seat}</span>
                                     <p className="text-[10px] font-bold text-slate-600 truncate max-w-[40px]">{p.name}</p>
                                 </div>
-                                <p className={`text-base font-black ${p.score < 0 ? 'text-red-600' : 'text-slate-800'}`}>{p.score}</p>
+                                <p className={`text-sm font-black leading-tight ${p.score < 0 ? 'text-red-600' : 'text-slate-800'}`}>{p.score}</p>
                             </div>
                         )
                     })}
@@ -613,12 +615,12 @@ const App = () => {
 
                         {mode === 'select' && (
                             <div className="bg-white/80 backdrop-blur border border-emerald-100 p-4 rounded-[2rem] shadow-sm space-y-4">
-                                <div className="bg-emerald-800/5 border border-emerald-900/10 p-3 rounded-2xl min-h-[90px] relative">
-                                    <div className="flex justify-between items-center mb-3 px-1">
+                                <div className="bg-emerald-800/5 border border-emerald-900/10 p-2 rounded-2xl min-h-[70px] relative">
+                                    <div className="flex justify-between items-center mb-2 px-1">
                                         <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest">手牌: {selectedTiles.length}/{requiredTileCount}</span>
                                         {selectedTiles.length > 0 && <button onClick={()=>{setSelectedTiles([]); setSelectedFlowers([]); setAiResult(null);}} className="text-[10px] text-red-600 font-bold bg-white px-2 py-1 rounded shadow-sm border border-red-100 flex items-center gap-1"><Icon name="trash" size={12}/>清空</button>}
                                     </div>
-                                    <div className="flex flex-wrap gap-x-[2px] gap-y-2 px-1">
+                                    <div className="flex flex-wrap gap-x-[2px] gap-y-1 px-1">
                                         {selectedTiles.map((t, i) => (
                                             <div key={i} className="w-[10.5%]"><BuiltInTile id={t} className="w-full aspect-[3/4] mahjong-tile-sm" onClick={() => removeTile(i)} /></div>
                                         ))}
@@ -626,7 +628,7 @@ const App = () => {
                                     </div>
                                 </div>
 
-                                <div className="bg-emerald-50/50 p-3 rounded-2xl border border-emerald-100/50">{renderKeyboard()}</div>
+                                <div className="bg-emerald-50/50 p-2 rounded-2xl border border-emerald-100/50">{renderKeyboard()}</div>
 
                                 {selectedTiles.length === requiredTileCount && !aiResult && (
                                     <button onClick={evaluateSelectedTiles} className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg text-lg tracking-widest active:scale-95 transition-transform border-b-4 border-emerald-800">結算{gameMode==='TW'?'台數':'番數'}</button>
