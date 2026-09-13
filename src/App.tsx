@@ -547,13 +547,13 @@ const App = () => {
                 <button onClick={() => window.location.reload()} className="p-2.5 bg-white/10 rounded-xl hover:bg-white/20" title="重新整理"><Icon name="rotate-ccw" size={20} /></button>
             </header>
 
-            <main className="app-content space-y-4">
+            <main className="app-content space-y-4 pt-2">
                 <div className="grid grid-cols-4 gap-2">
                     {getActivePlayers().map((p, idx) => {
                         const seat = ['東','南','西','北'][idx];
                         return (
                             <div key={p.id} onClick={() => setWinnerId(p.id)} className={`p-2 rounded-xl border-b-4 transition-all text-center relative cursor-pointer ${winnerId === p.id ? 'border-emerald-600 bg-emerald-50' : p.id === dealerId ? 'border-red-400 bg-red-50' : 'bg-white border-slate-200'}`}>
-                                {p.id === dealerId && <span className="absolute -top-2 -right-1 bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black shadow-sm border border-white">莊</span>}
+                                {p.id === dealerId && <span className="absolute top-0.5 right-1 bg-red-600 text-white text-[9px] px-1.5 py-0.5 rounded-full font-black shadow-sm">莊</span>}
                                 <div className="flex items-center justify-center gap-1 mb-0.5">
                                     <span className="text-[8px] bg-slate-200 px-1 rounded text-slate-500 font-bold">{seat}</span>
                                     <p className="text-[10px] font-bold text-slate-600 truncate max-w-[40px]">{p.name}</p>
