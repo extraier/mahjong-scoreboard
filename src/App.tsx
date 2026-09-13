@@ -556,9 +556,9 @@ const App = () => {
                         {gameMode === 'HK' ? '廣東牌 14張' : '台灣牌 16張'} | {roundWind}圈 | {streak}連莊
                     </p>
                 </div>
-                <button onClick={() => window.location.reload()} className="flex items-center gap-1 px-3 py-2 bg-white/20 hover:bg-white/30 border border-white/30 rounded-xl text-white shadow-sm transition-all active:scale-95" title="重新載入頁面（完整重整）" aria-label="重新整理">
+                <button onClick={() => window.location.reload()} className="flex items-center gap-1 px-3 py-2 bg-white/20 hover:bg-white/30 border border-white/30 rounded-xl text-white shadow-sm transition-all active:scale-95" title="重新載入頁面（完整重整）" aria-label="重新載入">
                     <Icon name="refresh" size={22} strokeWidth={2.5} />
-                    <span className="text-xs font-black tracking-wider">重整</span>
+                    <span className="text-xs font-black tracking-wider">重新載入</span>
                 </button>
             </header>
 
