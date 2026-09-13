@@ -53,17 +53,39 @@ body {
   background-color: #f0fdf4;
 }
 
+/* ------------------------------------------------------------
+   iOS status bar zone — sits ABOVE the green app header.
+   On iPhones with notches / Dynamic Island, the OS draws the
+   status bar (time, signal, battery) on top of whatever is at
+   y=0. Safari uses DARK text/icons for the status bar. If we let
+   the green header extend to y=0, the status bar text becomes
+   unreadable.
+
+   Solution: a thin black strip at the top of the app, sized to
+   match env(safe-area-inset-top) so it only occupies the actual
+   status bar zone. The green header sits BELOW it.
+
+   On non-notched phones, safe-area-inset-top is 0 and this
+   element collapses to zero height — invisible.
+   ------------------------------------------------------------ */
+.app-status-bar {
+  flex-shrink: 0;
+  height: env(safe-area-inset-top, 0px);
+  background-color: #000;
+  /* Below the iOS status bar, the home indicator at the bottom
+     of the screen is also drawn over content. We can't reserve
+     space for it inside the app shell (the nav already has its
+     own safe-area-inset-bottom padding), so this is just the top. */
+}
+
 .app-header {
-  /* Top bar of the app shell. No scrolling happens anywhere, so the
-     sticky is redundant; we use a normal grid row. */
+  /* Top bar of the app shell — sits BELOW the iOS status bar zone.
+     No safe-area padding-top needed because the .app-status-bar
+     sibling already occupies that area. */
   z-index: 30;
   background-color: #064e3b;
   color: white;
   padding: 0.75rem 1rem;
-  /* safe-area inset for notch / status bar — gives Chinese OEM phones
-     (MIUI, MagicOS, EMUI) room for their tall status bars. Always
-     include a minimum of 1rem so the title doesn't crowd the top. */
-  padding-top: max(0.75rem, env(safe-area-inset-top));
   padding-inline: max(1rem, env(safe-area-inset-left), env(safe-area-inset-right));
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
   border-bottom: 4px solid #022c22;

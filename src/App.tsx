@@ -534,6 +534,10 @@ const App = () => {
 
     return (
         <div className="app-shell">
+            {/* iOS status bar zone — black strip above the green header so
+                iOS Safari's status bar text/icons render on a contrasting
+                background. Collapses to 0 height on non-notched devices. */}
+            <div className="app-status-bar" />
             <header className="app-header">
                 <div>
                     <div className="flex items-center gap-2">
