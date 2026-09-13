@@ -58,27 +58,35 @@ body {
 
 /* ------------------------------------------------------------
    iOS status bar zone — sits ABOVE the green app header.
-   On iPhones with notches / Dynamic Island, the OS draws the
-   status bar (time, signal, battery) on top of whatever is at
-   y=0. Safari uses DARK text/icons for the status bar. If we let
-   the green header extend to y=0, the status bar text becomes
-   unreadable.
+   On iPhones with notches / Dynamic Island AND opened as a PWA
+   (home screen), env(safe-area-inset-top) is ~44-59px and the
+   <div> sized to that takes that space naturally.
 
-   Solution: a thin black strip at the top of the app, sized to
-   match env(safe-area-inset-top) so it only occupies the actual
-   status bar zone. The green header sits BELOW it.
+   On iPhones opened as a REGULAR SAFARI TAB, env(safe-area-inset-top)
+   reports 0 (Apple only honors safe-area in PWA mode). The iOS
+   status bar still draws on top of the page content. We need to
+   hard-reserve ~44px (iPhone 11 Pro/12 mini/13 mini/14 etc) or
+   ~47-59px (iPhone 14 Pro/15/16 with Dynamic Island) above the
+   app so the dark status bar text shows on a contrasting
+   background instead of dark-on-dark-green.
 
-   On non-notched phones, safe-area-inset-top is 0 and this
-   element collapses to zero height — invisible.
+   Strategy:
+   - Default --status-bar-h: 0px (no extra space — non-iOS users
+     and PWA users get the right amount from env()).
+   - main.tsx sets --status-bar-h: 44px when iOS Safari is detected
+     via UA AND env(safe-area-inset-top) reports 0 (regular tab).
+   - On Android, no override → 0px → invisible.
    ------------------------------------------------------------ */
+:root {
+  --status-bar-h: 0px;
+  --status-bar-bg: #000;
+}
+
 .app-status-bar {
   flex-shrink: 0;
-  height: env(safe-area-inset-top, 0px);
-  background-color: #000;
-  /* Below the iOS status bar, the home indicator at the bottom
-     of the screen is also drawn over content. We can't reserve
-     space for it inside the app shell (the nav already has its
-     own safe-area-inset-bottom padding), so this is just the top. */
+  /* Use env() if it returns > 0 (PWA mode), else fall back to var. */
+  height: max(env(safe-area-inset-top, 0px), var(--status-bar-h));
+  background-color: var(--status-bar-bg);
 }
 
 .app-header {
