@@ -33,3 +33,11 @@ tsconfig.node.tsbuildinfo
 
 # Keystore + gradle local props (already excluded via *.jks / *.keystore)
 gradle.properties.local
+
+# Phase 1 env files — only `.env.example` is committed.
+.env
+.env.*
+!.env.example
+
+# Mock server doesn't need a node_modules, but explicitly ignore local logs
+mock-server.log
