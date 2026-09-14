@@ -1,4 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import { useEntitlements } from './hooks/useEntitlements'
+import { PremiumGate } from './components/PremiumGate'
+import { AdBanner } from './components/AdBanner'
+import { AiCameraPanel } from './components/AiCameraPanel'
+import { SubscriptionPanel } from './components/SubscriptionPanel'
+import { UpgradeModal } from './components/UpgradeModal'
 
 declare global {
   interface Window {
@@ -244,6 +250,7 @@ const MahjongEngine = {
 };
 
 const App = () => {
+    const entitlements = useEntitlements();
     const [gameMode, setGameMode] = useState<GameMode>((localStorage.getItem('mahjong_mode') as GameMode) || 'HK');
     const [baseScore, setBaseScore] = useState<number>(parseInt(localStorage.getItem('tw_base') || '100'));
     const [taiScore, setTaiScore] = useState<number>(parseInt(localStorage.getItem('tw_tai') || '50'));
@@ -276,8 +283,10 @@ const App = () => {
     const [activePlayerIds, setActivePlayerIds] = useState<number[]>(() => players.slice(0, 4).map(p => p.id));
     const [dealerId, setDealerId] = useState<number>(players[0]?.id ?? 1);
     const [roundWind, setRoundWind] = useState<string>('東');
+    const [seatWind, setSeatWind] = useState<string>('東');
     const [streak, setStreak] = useState<number>(0);
     const [handFan, setHandFan] = useState<number>(gameMode === 'TW' ? 0 : 3);
+    const [upgradeModalOpen, setUpgradeModalOpen] = useState<boolean>(false);
     const [flowerFan, setFlowerFan] = useState<number>(0);
     const [winnerId, setWinnerId] = useState<number | undefined>(activePlayerIds[0]);
     const [loserId, setLoserId] = useState<number | undefined>(activePlayerIds[1]);
@@ -287,11 +296,7 @@ const App = () => {
     const [diceValues, setDiceValues] = useState<number[]>([1, 1, 1]);
     const [isRolling, setIsRolling] = useState<boolean>(false);
     const [history, setHistory] = useState<HistoryEntry[]>([]);
-    const [apiKey, setApiKey] = useState<string>(localStorage.getItem('gemini_key') || '');
-    const [tempApiKey, setTempApiKey] = useState<string>('');
     const [aiResult, setAiResult] = useState<AiResult | null>(null);
-    const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
     const [selectedTiles, setSelectedTiles] = useState<TileId[]>([]);
     const [selectedFlowers, setSelectedFlowers] = useState<TileId[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -313,46 +318,6 @@ const App = () => {
         setGameMode(m); localStorage.setItem('mahjong_mode', m);
         setHandFan(m === 'TW' ? 0 : 3);
         setSelectedTiles([]); setAiResult(null);
-    };
-
-    const applyApiKey = () => { localStorage.setItem('gemini_api_key', tempApiKey); setApiKey(tempApiKey); alert("API Key 已套用！"); };
-
-    const analyzeWithAI = async (base64) => {
-        if (!apiKey) { alert("請先設定 API Key。"); return; }
-        setIsAnalyzing(true); setAiResult(null);
-        const winnerName = getSeatName(winnerId);
-        const prompt = gameMode === 'TW' 
-            ? `你是台灣麻將裁判。環境：${roundWind}風圈，贏家：${winnerName}位。分析照片糊牌。返回 JSON: { "handName": "名稱", "handFan": 數字, "flowerFan": 數字, "details": ["細項"], "explanation": "簡介" }`
-            : `你是廣東麻雀裁判。環境：${roundWind}圈，贏家：${winnerName}位。分析照片糊牌。返回 JSON: { "handName": "名稱", "handFan": 數字, "flowerFan": 數字, "details": ["細項"], "explanation": "簡介" }`;
-
-        try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${apiKey}`, {
-                method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ role: "user", parts: [{ text: prompt }, { inlineData: { mimeType: "image/png", data: base64.split(',')[1] } }] }],
-                    generationConfig: { responseMimeType: "application/json" }
-                })
-            });
-            const data = await response.json();
-            if (data.error) throw new Error(data.error.message);
-            const res = JSON.parse(data.candidates[0].content.parts[0].text);
-            setAiResult({ valid: true, fan: res.handFan+res.flowerFan, ...res });
-            setHandFan(res.handFan || 0); setFlowerFan(res.flowerFan || 0);
-        } catch (e) {
-            setAiResult({ error: "AI 分析出錯：" + e.message });
-        } finally { setIsAnalyzing(false); }
-    };
-
-    const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const f = e.target.files?.[0];
-        if (!f) return;
-        const r = new FileReader();
-        r.onloadend = () => {
-            const result = typeof r.result === 'string' ? r.result : '';
-            setPreviewImage(result);
-            if (result) analyzeWithAI(result);
-        };
-        r.readAsDataURL(f);
     };
 
     const handleTileClick = (tileId) => {
@@ -504,7 +469,7 @@ const App = () => {
             setStreak(s => s + 1);
         }
         
-        setActiveTab('dice'); setHandFan(gameMode === 'TW' ? 0 : 3); setFlowerFan(0); setAiResult(null); setSelectedTiles([]); setSelectedFlowers([]); setPreviewImage(null);
+        setActiveTab('dice'); setHandFan(gameMode === 'TW' ? 0 : 3); setFlowerFan(0); setAiResult(null); setSelectedTiles([]); setSelectedFlowers([]);
     };
 
     const getDiceInstruction = () => {
@@ -663,25 +628,27 @@ const App = () => {
                         )}
 
                         {mode === 'camera' && (
-                            <div className="bg-white p-6 rounded-[2rem] border border-emerald-100 shadow-sm">
-                                {!apiKey && <div className="mb-4 bg-amber-50 p-4 rounded-xl border border-amber-200"><p className="text-xs font-bold text-amber-800">未設定 API Key</p><p className="text-[10px] text-amber-600">請在設定填入 Key 以開啟 AI。</p></div>}
-                                <div onClick={() => apiKey && fileInputRef.current?.click()} className={`aspect-square bg-slate-50 rounded-3xl border-2 border-dashed flex flex-col items-center justify-center relative overflow-hidden transition-all ${!apiKey ? 'opacity-50 border-slate-300' : 'border-emerald-400 hover:bg-emerald-50 cursor-pointer shadow-inner'}`}>
-                                    {previewImage ? <img src={previewImage} className="w-full h-full object-cover rounded-3xl" /> : <div className="text-emerald-700/50 font-bold"><Icon name="camera" size={48} className="mx-auto mb-2" />拍攝手牌照片</div>}
-                                    {isAnalyzing && <div className="absolute inset-0 bg-emerald-900/80 backdrop-blur flex items-center justify-center text-white"><span className="font-black tracking-widest animate-pulse">AI 分析中...</span></div>}
-                                </div>
-                                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" capture="environment" onChange={handleFile} />
-                                
-                                {aiResult && !aiResult.error && (
-                                    <div className="mt-4 p-5 bg-emerald-50 rounded-2xl border-2 border-emerald-400">
-                                        <div className="flex justify-between items-center mb-2">
-                                            <h3 className="font-black text-xl text-emerald-900">{aiResult.handName}</h3>
-                                            <span className="bg-emerald-800 text-white px-3 py-1 rounded-xl font-black">{aiResult.fan} {gameMode==='TW'?'台':'番'}</span>
-                                        </div>
-                                        <button onClick={()=>setActiveTab('score')} className="w-full mt-4 py-3 bg-emerald-900 text-white rounded-xl font-black shadow-lg">結算入賬</button>
-                                    </div>
-                                )}
-                            </div>
-                        )}
+                                                    <div className="bg-white p-4 rounded-[2rem] border border-emerald-100 shadow-sm">
+                                                        <PremiumGate
+                                                                                            enabled={entitlements.data.canUseAi}
+                                                                                            onUpgrade={() => setUpgradeModalOpen(true)}
+                                                                                        >
+                                                            <AiCameraPanel
+                                                                gameMode={gameMode}
+                                                                roundWind={roundWind as any}
+                                                                seatWind={seatWind as any}
+                                                                onResultConfirmed={(tiles, flowers) => {
+                                                                    // Translate AI tile IDs (W1..H8) into the
+                                                                    // local TileId type for the scoring engine.
+                                                                    setSelectedTiles(tiles as any);
+                                                                    setSelectedFlowers(flowers as any);
+                                                                    setAiResult({ valid: true, fan: 0, handName: 'AI 識別結果' });
+                                                                    setActiveTab('score');
+                                                                }}
+                                                            />
+                                                        </PremiumGate>
+                                                    </div>
+                                                )}
                     </div>
                 )}
 
@@ -859,11 +826,11 @@ const App = () => {
                         </div>
 
                         <div>
-                            <label className="text-[10px] font-bold text-slate-400 block mb-2">Gemini API Key</label>
-                            <div className="flex gap-2">
-                                <input type="password" value={tempApiKey} onChange={e => setTempApiKey(e.target.value)} className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-mono outline-none" />
-                                <button onClick={applyApiKey} className="bg-emerald-800 text-white px-4 rounded-xl font-bold text-xs">套用</button>
-                            </div>
+                            <SubscriptionPanel
+                                entitlements={entitlements.data}
+                                onUpgrade={() => setUpgradeModalOpen(true)}
+                                onRefresh={() => entitlements.refresh()}
+                            />
                         </div>
                         <div className="pt-2 border-t border-slate-100">
                             <button onClick={()=>{if(confirm('重設所有分數？')){setPlayers(players.map(p=>({...p,score:0})));setHistory([]);}}} className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold text-sm border border-red-100">重設遊戲數據</button>
@@ -871,14 +838,30 @@ const App = () => {
                     </div>
                 )}
                 
-                <AdSenseWidget />
-                
+                <AdBanner entitlements={entitlements.data} className="mx-4 mb-3" />
+
                 <div className="text-center pt-4 pb-2">
                     <a href="https://comparetiger.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-slate-400 font-bold tracking-widest uppercase hover:text-emerald-600 transition-colors">
                         comparetiger 創作
                     </a>
                 </div>
             </main>
+
+            {upgradeModalOpen && (
+                <UpgradeModal
+                    onClose={() => setUpgradeModalOpen(false)}
+                    onConfirm={() => {
+                        // Phase 1 stub: instead of opening Google Play Billing,
+                        // flip mock-server to premium so the developer can see
+                        // the rest of the premium flow. Phase 3 will replace
+                        // this with the real launchPurchaseFlow call.
+                        setUpgradeModalOpen(false);
+                        fetch('http://localhost:8787/api/dev/premium-on', { method: 'POST' })
+                          .then(() => entitlements.refresh())
+                          .catch(() => { /* dev only — silent if mock isn't running */ });
+                    }}
+                />
+            )}
 
             <nav className="app-nav" aria-label="主選單">
                 <NavButton active={activeTab === 'dice'} icon="dices" label="開局" onClick={() => setActiveTab('dice')} />

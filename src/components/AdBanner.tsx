@@ -16,9 +16,11 @@ export interface AdBannerProps {
   entitlements: Entitlements;
   /** Optional placement id for analytics; not used in Phase 1 */
   placement?: string;
+  /** Optional additional className for layout positioning */
+  className?: string;
 }
 
-export function AdBanner({ entitlements, placement = 'scoreboard_bottom' }: AdBannerProps) {
+export function AdBanner({ entitlements, placement = 'scoreboard_bottom', className = '' }: AdBannerProps) {
   // Loading state → show nothing. NEVER show an ad while we don't yet
   // know if the user is premium (spec §8 entitlement-loading rule).
   if (!entitlements.fetchedAt || entitlements.fetchedAt.startsWith('1970')) return null;
@@ -29,7 +31,7 @@ export function AdBanner({ entitlements, placement = 'scoreboard_bottom' }: AdBa
 
   return (
     <div
-      className="bg-emerald-900/10 border border-dashed border-emerald-900/30 rounded-xl text-center py-3 px-4 my-2"
+      className={`bg-emerald-900/10 border border-dashed border-emerald-900/30 rounded-xl text-center py-3 px-4 my-2 ${className}`.trim()}
       aria-label="廣告位置 (Phase 1 placeholder, Phase 4 wires AdMob)"
       data-ad-placement={placement}
     >

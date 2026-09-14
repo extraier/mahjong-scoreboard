@@ -1,10 +1,15 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
+import { configureApiClient } from './lib/apiClient'
 import './index.css'
 
-// ------------------------------------------------------------
-// iOS Safari status bar polyfill
+// Configure apiClient base URL BEFORE React mounts.
+// Phase 1: points at server/mock-server.mjs.
+// Production: omit VITE_API_BASE_URL → fetch goes to same-origin.
+configureApiClient({
+  baseUrl: import.meta.env.VITE_API_BASE_URL || '',
+});
 // ------------------------------------------------------------
 // On iOS Safari opened as a REGULAR TAB (not a PWA), the
 // `env(safe-area-inset-top)` reports 0 — Apple only honors it

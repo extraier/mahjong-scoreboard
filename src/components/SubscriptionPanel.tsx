@@ -21,10 +21,11 @@ const PRODUCT_IDS = ['premium_monthly'];
 
 export interface SubscriptionPanelProps {
   entitlements: Entitlements;
+  onUpgrade: () => void;
   onRefresh: () => Promise<void>;
 }
 
-export function SubscriptionPanel({ entitlements, onRefresh }: SubscriptionPanelProps) {
+export function SubscriptionPanel({ entitlements, onUpgrade, onRefresh }: SubscriptionPanelProps) {
   const [products, setProducts] = useState<BillingProduct[]>([]);
   const [busy, setBusy] = useState<null | string>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,17 +89,13 @@ export function SubscriptionPanel({ entitlements, onRefresh }: SubscriptionPanel
             <li>完全隱藏廣告</li>
             <li>優先支援新功能</li>
           </ul>
-          {products.map((p) => (
-            <button
-              key={p.productId}
-              type="button"
-              onClick={() => handlePurchase(p.productId)}
-              disabled={busy !== null}
-              className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-black text-sm shadow-md active:scale-95 transition-transform disabled:opacity-60"
-            >
-              {busy === p.productId ? '開啟付款流程…' : `訂閱 ${p.title}`}
-            </button>
-          ))}
+          <button
+            type="button"
+            onClick={onUpgrade}
+            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-black text-sm shadow-md active:scale-95 transition-transform"
+          >
+            了解升級方案
+          </button>
           {error && <p className="text-xs text-red-700 bg-red-50 p-2 rounded">{error}</p>}
         </div>
       )}
