@@ -10,6 +10,7 @@ import express, { type Express, type NextFunction, type Request, type Response }
 import { toResponseBody } from './errors.js';
 import { log } from './log.js';
 import { healthzRouter } from './routes/healthz.js';
+import { meRouter } from './routes/me.js';
 // Routes get wired in subsequent commits:
 // import { meRouter } from './routes/me.js';
 // import { visionRouter } from './routes/vision.js';
@@ -35,11 +36,11 @@ export function createApp(): Express {
   // Public routes
   app.use('/api', healthzRouter);
 
-  // Authenticated routes (require Auth0/Firebase ID token in Bearer header)
-  // — wired in subsequent commits
-  // app.use('/api', requireAuth, meRouter);
+  // Authenticated user-facing routes
+  app.use('/api', meRouter);
+
+  // Authenticated routes (vision/billing) wired in subsequent commits
   // app.use('/api', requireAuth, visionRouter);
-  // app.use('/api', requireAuth, billingRouter);
 
   // 404
   app.use((req: Request, res: Response) => {
