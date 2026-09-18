@@ -28,13 +28,20 @@ export interface Config {
   };
 
   vision: {
-    provider: 'minimax' | 'disabled';
+    provider: 'minimax' | 'ollama' | 'stub' | 'disabled';
     apiKey: string | null;
     apiHost: string;
     apiBaseUrl: string;
     model: string;
     timeoutMs: number;
     maxImageBytes: number;
+  };
+
+  ollama: {
+    baseUrl: string;     // e.g. http://localhost:11434 or https://<tailnet>.ts.net
+    model: string;        // e.g. minicpm-v, llama3.2-vision:11b
+    timeoutMs: number;
+    reachable: boolean;   // pinged at boot — false → fall back to stub
   };
 
   quota: {
@@ -66,7 +73,9 @@ function loadConfig(): Config {
 
   const visionRaw = (process.env.VISION_PROVIDER ?? 'minimax').toLowerCase();
   const visionProvider: Config['vision']['provider'] =
-    visionRaw === 'disabled' ? 'disabled' : 'minimax';
+    visionRaw === 'ollama' || visionRaw === 'stub' || visionRaw === 'disabled'
+      ? visionRaw
+      : 'minimax';
 
   const apiKey = process.env.MINIMAX_API_KEY || null;
   const apiHost = process.env.MINIMAX_API_HOST || 'https://api.minimax.io';
@@ -99,6 +108,12 @@ function loadConfig(): Config {
     googlePlay: {
       packageName: gplayPkg,
       serviceAccountKey: gplayKey,
+    },
+    ollama: {
+      baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
+      model: process.env.OLLAMA_MODEL ?? 'minicpm-v',
+      timeoutMs: num(process.env.OLLAMA_TIMEOUT_MS, 60_000),
+      reachable: false, // set by app.ts startup ping
     },
   };
 }

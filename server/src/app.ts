@@ -15,12 +15,21 @@ import { meRouter } from './routes/me.js';
 import { createVisionRouter } from './routes/vision.js';
 import { createStubProvider } from './providers/stubProvider.js';
 import { createMinimaxProvider } from './providers/minimaxVision.js';
+import { createOllamaProvider } from './providers/ollamaVision.js';
 import type { VisionProvider } from './providers/visionProvider.js';
 
 function selectVisionProvider(): VisionProvider {
-  if (config.vision.provider === 'disabled') return createStubProvider();
-  if (!config.vision.apiKey) return createStubProvider();
-  return createMinimaxProvider();
+  switch (config.vision.provider) {
+    case 'ollama':
+      return createOllamaProvider();
+    case 'stub':
+    case 'disabled':
+      return createStubProvider();
+    case 'minimax':
+    default:
+      if (!config.vision.apiKey) return createStubProvider();
+      return createMinimaxProvider();
+  }
 }
 
 /**

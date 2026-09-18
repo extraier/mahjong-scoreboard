@@ -25,6 +25,6 @@ export interface VisionInput {
 
 export interface VisionProvider {
   /** Stable identifier — recorded in audit log + returned to client in response.provider */
-  readonly name: 'minimax' | 'stub';
+  readonly name: 'minimax' | 'stub' | 'ollama';
   analyze(input: VisionInput): Promise<MahjongVisionResult>;
 }
