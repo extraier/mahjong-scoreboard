@@ -142,6 +142,8 @@ describe('POST /api/vision/analyze (5-step handler)', () => {
 
   it('200 with stub provider for test-user (premium), valid PNG', async () => {
     process.env.AUTH_MODE = 'test';
+    process.env.VISION_PROVIDER = 'stub';
+    vi.resetModules();
     const mod = await import('../src/app.js');
     const a = mod.createApp();
     const res = await request(a)
@@ -152,8 +154,10 @@ describe('POST /api/vision/analyze (5-step handler)', () => {
       .field('seatWind', '東')
       .attach('image', TINY_PNG, { filename: 'hand.png', contentType: 'image/png' });
     expect(res.status).toBe(200);
-    expect(res.body.provider).toBe('stub'); // VISION_PROVIDER unset → stub by default
+    expect(res.body.provider).toBe('stub');
     expect(res.body.result.tiles).toEqual(expect.any(Array));
+    delete process.env.VISION_PROVIDER;
+    vi.resetModules();
   });
 
   it('400 with no image field', async () => {

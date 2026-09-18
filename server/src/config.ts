@@ -41,6 +41,12 @@ export interface Config {
     baseUrl: string;
     model: string;
     timeoutMs: number;
+    /**
+     * RAM hygiene — unload model immediately after each request.
+     * Default 0. Set to e.g. 600 (10 min) for warm behavior.
+     * Overridden per-request via ollamaVision.ts's `keep_alive` body param.
+     */
+    keepAlive?: number | string;
     reachable: boolean;
   };
 
@@ -77,7 +83,7 @@ function loadConfig(): Config {
   const authEmu = process.env.FIREBASE_AUTH_EMULATOR_HOST || null;
   const fsEmu = process.env.FIRESTORE_EMULATOR_HOST || null;
 
-  const visionRaw = (process.env.VISION_PROVIDER ?? 'minimax').toLowerCase();
+  const visionRaw = (process.env.VISION_PROVIDER ?? 'local').toLowerCase();
   const visionProvider: Config['vision']['provider'] =
     visionRaw === 'ollama' || visionRaw === 'stub' || visionRaw === 'local' || visionRaw === 'disabled'
       ? (visionRaw as Config['vision']['provider'])
@@ -119,6 +125,10 @@ function loadConfig(): Config {
       baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
       model: process.env.OLLAMA_MODEL ?? 'minicpm-v',
       timeoutMs: num(process.env.OLLAMA_TIMEOUT_MS, 60_000),
+      // RAM hygiene: 0 = unload model from VRAM immediately after each request.
+      // Models cold-load on next request (~3-10s). For warm in-memory behavior,
+      // set OLLAMA_KEEP_ALIVE=600 (10 min). See PROVIDERS.md §"RAM hygiene".
+      keepAlive: process.env.OLLAMA_KEEP_ALIVE ?? '0',
       reachable: false,
     },
     localVision: {

@@ -60,6 +60,11 @@ async function callOllama(input: VisionInput): Promise<MahjongVisionResult> {
         images: [b64],
         stream: false,
         format: 'json',
+        // RAM hygiene: unload model from VRAM/RAM immediately after this
+        // request completes. Models reload on next request (~3-10s cold).
+        // OLLAMA_KEEP_ALIVE=0 (set in ~/.zshrc) is the server-side default;
+        // this is the explicit per-request override that wins regardless.
+        keep_alive: config.ollama.keepAlive,
       }),
       signal: ctrl.signal,
     });
