@@ -18,6 +18,7 @@ import sys
 import json
 import argparse
 import time
+import os
 from pathlib import Path
 
 import cv2
@@ -26,7 +27,7 @@ import torch
 from PIL import Image
 from transformers import ViTImageProcessor, ViTForImageClassification
 
-MODEL_DIR = Path('/Users/roger/mahjong-scoreboard/models/mahjong-vision-krmin/vision_transformer_local')
+MODEL_DIR = Path(os.environ.get('LOCAL_VISION_MODEL_DIR', '/Users/roger/mahjong-scoreboard/models/mahjong-vision-krmin/vision_transformer_local'))
 
 # Riichi notation (model output) -> our 麻雀 notation (W/T/S/F/H)
 RIICHI_TO_OURS = {}
@@ -124,8 +125,8 @@ def detect_tile_boxes(image_bgr, min_area=300, max_area_ratio=0.6, min_side=32, 
     # Split wide bboxes (when RETR_TREE merged several tiles into one)
     split_boxes = []
     for (x, y, bw, bh) in kept:
-        if bw > 70 and bw > bh * 1.5:
-            # Estimate single-tile width from the height (tiles are ~h*0.85 wide)
+        if bw > 50 and bw > bh * 0.95:
+            # Estimate single-tile width from the height
             est_tile_w = max(30, int(bh * 0.85))
             n_tiles = max(2, round(bw / est_tile_w))
             actual_tile_w = bw // n_tiles
