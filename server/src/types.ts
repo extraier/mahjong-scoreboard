@@ -52,7 +52,7 @@ export interface VisionAnalyzeRequest {
 
 export interface VisionAnalyzeResponse {
   requestId: string;
-  provider: 'minimax' | 'stub' | 'ollama';
+  provider: 'minimax' | 'stub' | 'ollama' | 'local';
   result: MahjongVisionResult;
   usage: { remainingAiUses: number };
 }

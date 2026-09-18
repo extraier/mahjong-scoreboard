@@ -28,7 +28,7 @@ export interface Config {
   };
 
   vision: {
-    provider: 'minimax' | 'ollama' | 'stub' | 'disabled';
+    provider: 'minimax' | 'ollama' | 'stub' | 'local' | 'disabled';
     apiKey: string | null;
     apiHost: string;
     apiBaseUrl: string;
@@ -38,10 +38,16 @@ export interface Config {
   };
 
   ollama: {
-    baseUrl: string;     // e.g. http://localhost:11434 or https://<tailnet>.ts.net
-    model: string;        // e.g. minicpm-v, llama3.2-vision:11b
+    baseUrl: string;
+    model: string;
     timeoutMs: number;
-    reachable: boolean;   // pinged at boot — false → fall back to stub
+    reachable: boolean;
+  };
+
+  localVision: {
+    timeoutMs: number;
+    pythonBin: string;
+    scriptPath: string;
   };
 
   quota: {
@@ -73,8 +79,8 @@ function loadConfig(): Config {
 
   const visionRaw = (process.env.VISION_PROVIDER ?? 'minimax').toLowerCase();
   const visionProvider: Config['vision']['provider'] =
-    visionRaw === 'ollama' || visionRaw === 'stub' || visionRaw === 'disabled'
-      ? visionRaw
+    visionRaw === 'ollama' || visionRaw === 'stub' || visionRaw === 'local' || visionRaw === 'disabled'
+      ? (visionRaw as Config['vision']['provider'])
       : 'minimax';
 
   const apiKey = process.env.MINIMAX_API_KEY || null;
@@ -113,7 +119,12 @@ function loadConfig(): Config {
       baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',
       model: process.env.OLLAMA_MODEL ?? 'minicpm-v',
       timeoutMs: num(process.env.OLLAMA_TIMEOUT_MS, 60_000),
-      reachable: false, // set by app.ts startup ping
+      reachable: false,
+    },
+    localVision: {
+      timeoutMs: num(process.env.LOCAL_VISION_TIMEOUT_MS, 60_000),
+      pythonBin: process.env.LOCAL_VISION_PYTHON ?? '.mlvenv/bin/python',
+      scriptPath: process.env.LOCAL_VISION_SCRIPT ?? 'scripts/mahjong_local_inference.py',
     },
   };
 }

@@ -16,10 +16,13 @@ import { createVisionRouter } from './routes/vision.js';
 import { createStubProvider } from './providers/stubProvider.js';
 import { createMinimaxProvider } from './providers/minimaxVision.js';
 import { createOllamaProvider } from './providers/ollamaVision.js';
+import { createLocalVisionProvider } from './providers/localVision.js';
 import type { VisionProvider } from './providers/visionProvider.js';
 
 function selectVisionProvider(): VisionProvider {
   switch (config.vision.provider) {
+    case 'local':
+      return createLocalVisionProvider();
     case 'ollama':
       return createOllamaProvider();
     case 'stub':
