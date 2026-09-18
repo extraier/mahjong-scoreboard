@@ -31,7 +31,10 @@ export interface Config {
     provider: 'minimax' | 'disabled';
     apiKey: string | null;
     apiHost: string;
+    apiBaseUrl: string;
     model: string;
+    timeoutMs: number;
+    maxImageBytes: number;
   };
 
   quota: {
@@ -87,7 +90,10 @@ function loadConfig(): Config {
       provider: visionProvider,
       apiKey,
       apiHost,
+      apiBaseUrl: process.env.MINIMAX_API_BASE_URL ?? 'https://api.minimax.io/v1',
       model,
+      timeoutMs: num(process.env.MINIMAX_TIMEOUT_MS, 30_000),
+      maxImageBytes: num(process.env.MINIMAX_MAX_IMAGE_BYTES, 10 * 1024 * 1024),
     },
     quota: { monthlyAiUses },
     googlePlay: {

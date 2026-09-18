@@ -9,12 +9,41 @@ import cors from 'cors';
 import express, { type Express, type NextFunction, type Request, type Response } from 'express';
 import { toResponseBody } from './errors.js';
 import { log } from './log.js';
+import { config } from './config.js';
 import { healthzRouter } from './routes/healthz.js';
 import { meRouter } from './routes/me.js';
-// Routes get wired in subsequent commits:
-// import { meRouter } from './routes/me.js';
-// import { visionRouter } from './routes/vision.js';
-// import { billingRouter } from './routes/billing.js';
+import { createVisionRouter } from './routes/vision.js';
+import { createStubProvider } from './providers/stubProvider.js';
+import { createMinimaxProvider } from './providers/minimaxVision.js';
+import type { VisionProvider } from './providers/visionProvider.js';
+
+function selectVisionProvider(): VisionProvider {
+  if (config.vision.provider === 'disabled') return createStubProvider();
+  if (!config.vision.apiKey) return createStubProvider();
+  return createMinimaxProvider();
+}
+
+/**
+ * Stub entitlement reader. Replaced in commit 4 with
+ * services/entitlements.computeEntitlements(uid).
+ */
+async function stubIsPremium(uid: string): Promise<{
+  isPremium: boolean;
+  canUseAi: boolean;
+  remainingAiUses: number;
+}> {
+  const isAdmin = uid === 'admin' || uid === 'test-user';
+  return {
+    isPremium: isAdmin,
+    canUseAi: isAdmin,
+    remainingAiUses: isAdmin ? 999 : 0,
+  };
+}
+
+/** Stub quota decrement. Replaced in commit 6. */
+async function stubDecrementQuota(_uid: string): Promise<void> {
+  return;
+}
 
 export function createApp(): Express {
   const app = express();
@@ -39,8 +68,15 @@ export function createApp(): Express {
   // Authenticated user-facing routes
   app.use('/api', meRouter);
 
-  // Authenticated routes (vision/billing) wired in subsequent commits
-  // app.use('/api', requireAuth, visionRouter);
+  // Vision route with deps wired (entitlement + quota use stubs;
+  // commit 4 + 6 replace the stubs with Firestore-backed implementations).
+  const provider = selectVisionProvider();
+  const visionRouter = createVisionRouter({
+    provider,
+    isPremium: stubIsPremium,
+    decrementQuota: stubDecrementQuota,
+  });
+  app.use('/api', visionRouter);
 
   // 404
   app.use((req: Request, res: Response) => {
