@@ -48,3 +48,5 @@ models/
 
 # Sample / debug images
 /tmp/mahjong-crops/
+scripts/__pycache__/
+*.pyc

@@ -125,18 +125,66 @@ ollama rm llama3.2-vision:11b
 ## Local provider (OpenCV + ViT) — RAM profile
 
 The `local` provider uses `pjura/mahjong_vision` (ViT-base-patch16-224).
-RAM profile at runtime:
+There are **two modes** with different RAM / latency profiles:
 
-| State | RSS | VRAM (MPS) |
-|---|---|---|
-| Cold (first request) | 200 MB | loads 331 MB model into MPS |
-| Warm (subsequent) | 350 MB | 331 MB model resident |
-| After 5 min idle (model not unloaded) | 350 MB | 331 MB |
+### Mode 1: HTTP (default) — long-lived FastAPI server
 
-The script `scripts/mahjong_local_inference.py` **keeps the model in memory
-between calls within one process**. Each `tsx spawn python` invocation pays
-the cold-load cost (~6s on M4), so for high-frequency use, **run the Python
-side as a long-lived service** (`scripts/local_vision_server.py` mode).
+The Python ViT model runs in a **dedicated FastAPI process**. Model loads
+once at startup and stays in RAM. Subsequent requests share the model.
+
+| State | RSS | Latency | Pattern |
+|---|---|---|---|
+| Cold start | 167 MB | 349 ms first req | model load 595 ms + classify 250 ms |
+| Warm (subsequent) | 167 MB | **262 ms** | no model load |
+
+Cost: ~340 MB persistent RAM. Worth it for any production traffic.
+
+```bash
+# Start the long-lived server
+./scripts/start-local-vision.sh
+# or directly:
+./.mlvenv/bin/python scripts/local_vision_server.py --port 8789
+
+# Node side automatically uses HTTP (default LOCAL_VISION_MODE=http)
+VISION_PROVIDER=local npm run dev
+```
+
+### Mode 2: spawn (fallback) — tsx forks Python per request
+
+Spawns `python scripts/mahjong_local_inference.py` for each request.
+**Model reloads each call**, paying 6 s cold-load penalty on M4.
+
+Use only for dev/single-request scenarios where the persistent 340 MB isn't worth it.
+
+```bash
+LOCAL_VISION_MODE=spawn VISION_PROVIDER=local npm run dev
+```
+
+### Mode 1 stack
+
+```
+┌─────────────┐         ┌─────────────┐         ┌──────────────┐
+│ Vercel      │  HTTPS  │ Node (tsx)  │  HTTP   │ FastAPI      │
+│ (Capacitor) │ ──────> │ localVision │ ──────> │ 8789 analyze │
+│ client      │         │ provider    │         │ + ViT in RAM │
+└─────────────┘         └─────────────┘         └──────────────┘
+```
+
+Total resident RAM: ~150 MB (Node) + 167 MB (Python+ViT) = **~320 MB**.
+Ollama daemon: NOT loaded. Total idle footprint: **~320 MB**.
+
+### Operational notes
+
+- **Always pre-start the FastAPI server before `npm run dev`** in production.
+  Otherwise the first request takes ~6 s while Python cold-starts.
+- **`start-local-vision.sh`** uses `nohup` + PID file, so it survives the
+  parent shell. Run via `kill $(cat /tmp/local_vision.pid)` to stop.
+- **For multi-worker scaling**: increase uvicorn `--workers N`. Each worker
+  loads its own 167 MB model — for Mac mini 16 GB, workers=2 is the ceiling.
+- **`/health` endpoint** reports `device`, `min_conf`, `num_classes`. Use
+  for orchestration: wait for `status:"ready"` before sending traffic.
+- **`/analyze_json`** accepts `{ image_b64 }` for callers that prefer
+  JSON over multipart (e.g., some Vercel edge runtimes).
 
 ## Provider switch cost
 
