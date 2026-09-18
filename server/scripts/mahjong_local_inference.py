@@ -69,15 +69,16 @@ class TileRecognizer:
         return self.id2ours[top_id], conf
 
 
-def detect_tile_boxes(image_bgr, min_area=300, max_area_ratio=0.6, debug=False):
+def detect_tile_boxes(image_bgr, min_area=300, max_area_ratio=0.6, min_side=32, debug=False):
     """Detect tile rectangles in a scene photo using OpenCV.
 
     Strategy:
       1. Convert to grayscale, blur
-      2. Adaptive threshold + Canny edges
-      3. Find contours via RETR_TREE (so nested contours stay separate)
-      4. Filter by area only — ViT classifier will reject non-tiles
+      2. Canny edges + dilate
+      3. Find contours (RETR_TREE so adjacent tiles stay separate)
+      4. Filter by area + minimum side length
       5. De-dup overlapping boxes (NMS-lite)
+      6. Split any bbox wider than 70px (probably 2-3 tiles in row)
     Returns list of (x, y, w, h).
     """
     h, w = image_bgr.shape[:2]
@@ -89,22 +90,23 @@ def detect_tile_boxes(image_bgr, min_area=300, max_area_ratio=0.6, debug=False):
 
     contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    boxes = []
+    raw_boxes = []
     for c in contours:
         area = cv2.contourArea(c)
         if area < min_area or area > img_area * max_area_ratio:
             continue
         x, y, bw, bh = cv2.boundingRect(c)
+        if bw < min_side or bh < min_side:
+            continue
         aspect = bw / float(bh) if bh else 0
-        # Tile aspect: depends on orientation. 0.5 (tall) to 2.0 (wide)
         if not (0.4 < aspect < 2.5):
             continue
-        boxes.append((x, y, bw, bh))
+        raw_boxes.append((x, y, bw, bh))
 
-    # NMS-lite: drop boxes mostly contained in a larger one
-    boxes.sort(key=lambda b: -b[2] * b[3])
+    # NMS-lite
+    raw_boxes.sort(key=lambda b: -b[2] * b[3])
     kept = []
-    for b in boxes:
+    for b in raw_boxes:
         bx, by, bw, bh = b
         is_dup = False
         for kx, ky, kw, kh in kept:
@@ -119,9 +121,22 @@ def detect_tile_boxes(image_bgr, min_area=300, max_area_ratio=0.6, debug=False):
         if not is_dup:
             kept.append(b)
 
-    # Sort by row (y-band) then column (x) for natural reading order
+    # Split wide bboxes (when RETR_TREE merged several tiles into one)
+    split_boxes = []
+    for (x, y, bw, bh) in kept:
+        if bw > 70 and bw > bh * 1.5:
+            # Estimate single-tile width from the height (tiles are ~h*0.85 wide)
+            est_tile_w = max(30, int(bh * 0.85))
+            n_tiles = max(2, round(bw / est_tile_w))
+            actual_tile_w = bw // n_tiles
+            for i in range(n_tiles):
+                tx = x + i * actual_tile_w
+                split_boxes.append((tx, y, actual_tile_w, bh))
+        else:
+            split_boxes.append((x, y, bw, bh))
+
     row_height = max(50, h // 6)
-    return sorted(kept, key=lambda b: (b[1] // row_height, b[0]))
+    return sorted(split_boxes, key=lambda b: (b[1] // row_height, b[0]))
 
 
 def main():
@@ -162,6 +177,10 @@ def main():
         crop_bgr = image_bgr[y:y+bh, x:x+bw]
         crop_pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)).resize((224, 224))
         label, conf = recognizer.classify_crop(crop_pil)
+        # Filter out non-tile predictions (low confidence = likely text/symbol/partial)
+        if conf < 0.4:
+            print(f'[tile {i:02d}] bbox=({x},{y},{bw}x{bh}) -> REJECTED conf={conf:.3f} (low conf)')
+            continue
         tiles.append(label)
         confidences.append(conf)
         print(f'[tile {i:02d}] bbox=({x},{y},{bw}x{bh}) -> {label} conf={conf:.3f}')
