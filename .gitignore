@@ -73,3 +73,6 @@ models/mahjong-vision-finetuned-v6/
 models/mahjong-vision-finetuned-v7/
 models/mahjong-vision-finetuned-v8/
 models/mahjong-vision-finetuned-v9/
+
+# Large external datasets (re-downloaded if needed)
+models/kaggle-mahjong/
