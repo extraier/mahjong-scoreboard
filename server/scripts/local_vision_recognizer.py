@@ -12,7 +12,23 @@ Detector options (selected by LOCAL_VISION_DETECTOR env var):
            but classes are riichi notation (1m-9m, 1p-9p, 1s-9s, 1z-7z)
            so we use YOLO boxes for detection only and the v4 ViT for
            classification. Tile classification happens via the ViT crops.
+  - 'hybrid': YOLO + OpenCV combined via NMS, v4 ViT classifies.
+  - 'ensemble': Hybrid detector + ensemble v4 ViT + YOLO label (best of both).
 """
+
+# Riichi → HK mapping for YOLO label translation
+_RIICHI_TO_HK = {
+    '1m': 'W1', '2m': 'W2', '3m': 'W3', '4m': 'W4', '5m': 'W5',
+    '6m': 'W6', '7m': 'W7', '8m': 'W8', '9m': 'W9',
+    '1p': 'T1', '2p': 'T2', '3p': 'T3', '4p': 'T4', '5p': 'T5',
+    '6p': 'T6', '7p': 'T7', '8p': 'T8', '9p': 'T9',
+    '1s': 'S1', '2s': 'S2', '3s': 'S3', '4s': 'S4', '5s': 'S5',
+    '6s': 'S6', '7s': 'S7', '8s': 'S8', '9s': 'S9',
+    '1z': 'F1', '2z': 'F2', '3z': 'F3', '4z': 'F4',
+    '5z': 'F7', '6z': 'F6', '7z': 'F5',
+    '0m': 'W5', '0p': 'T5', '0s': 'S5',
+}
+
 
 import os
 import sys
@@ -58,9 +74,9 @@ def _load_yolo():
 def detect_tile_boxes_yolo(image_bgr, conf_thresh=0.25):
     """Detect tile bounding boxes using YOLOv11. Returns list of (x, y, w, h).
 
-    The YOLO model is trained on Japanese riichi tile photos but we only
-    use it for *detection* — the classifier (ViT v4) handles actual tile
-    identity. So the class predictions here are discarded.
+    The YOLO model is trained on Japanese riichi tile photos but we use it
+    for *detection* primarily; the v4 ViT handles classification. For the
+    'ensemble' mode, YOLO labels are also used.
     """
     model = _load_yolo()
     # ultralytics expects RGB
@@ -74,6 +90,34 @@ def detect_tile_boxes_yolo(image_bgr, conf_thresh=0.25):
         h = y2 - y1
         boxes.append((int(x1), int(y1), int(w), int(h)))
     return boxes
+
+
+def _yolo_labels_for_boxes(image_bgr, target_boxes, iou_thresh=0.3):
+    """For each target box, find the matching YOLO detection (by best IoU)
+    and return (hk_label, yolo_conf) or (None, 0.0) if no match >= threshold.
+    Used by ensemble mode.
+    """
+    model = _load_yolo()
+    img_rgb = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)
+    # Lower conf threshold so we catch candidates even when v4 is the primary
+    results = model(img_rgb, conf=0.10, verbose=False, device='mps')[0]
+    out = []
+    for tx, ty, tw, th in target_boxes:
+        best_iou = 0
+        best_label = (None, 0.0)
+        for box in results.boxes:
+            yx1, yy1, yx2, yy2 = box.xyxy[0].tolist()
+            yw, yh = yx2 - yx1, yy2 - yy1
+            iou = _box_iou((int(tx), int(ty), int(tw), int(th)),
+                          (int(yx1), int(yy1), int(yw), int(yh)))
+            if iou > best_iou:
+                best_iou = iou
+                cls_id = int(box.cls[0])
+                cls_name = model.names[cls_id]
+                hk_name = _RIICHI_TO_HK.get(cls_name, None)
+                best_label = (hk_name, float(box.conf[0]))
+        out.append(best_label if best_iou >= iou_thresh else (None, 0.0))
+    return out
 
 
 def _box_iou(a, b):
@@ -211,23 +255,46 @@ class LocalVisionService:
                 detector_used = 'sliding'
             else:
                 detector_used = 'hybrid'
+        elif self.detector == 'ensemble':
+            # Hybrid detector + ensemble classification (v4 ViT + YOLO label)
+            yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
+            opencv_boxes = detect_tile_boxes(image_bgr)
+            boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+            detector_used = 'ensemble'
         else:
             boxes = detect_tile_boxes(image_bgr)
         detect_ms = int((time.time() - t_det0) * 1000)
 
+        # For ensemble mode, get YOLO labels for each box once (avoids
+        # running YOLO inference N times).
+        yolo_labels_per_box = None
+        if self.detector == 'ensemble':
+            yolo_labels_per_box = _yolo_labels_for_boxes(image_bgr, boxes)
+
         tiles = []
         confidences = []
         rejected = []
+        ensemble_log = []
         t_cls0 = time.time()
         for i, (x, y, bw, bh) in enumerate(boxes):
             crop_bgr = image_bgr[y:y+bh, x:x+bw]
             crop_pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)).resize((224, 224))
             label, conf = self.recognizer.classify_crop(crop_pil)
-            if conf < self.min_conf or label is None:
-                rejected.append({'index': i, 'bbox': [x, y, bw, bh], 'conf': round(conf, 4)})
+            chosen_label = label
+            chosen_conf = conf
+            if self.detector == 'ensemble' and yolo_labels_per_box is not None:
+                yolo_label, yolo_conf = yolo_labels_per_box[i]
+                if yolo_label and yolo_conf > chosen_conf:
+                    chosen_label = yolo_label
+                    chosen_conf = yolo_conf
+                    ensemble_log.append({'i': i, 'v4': label, 'v4_conf': round(conf, 4),
+                                         'yolo': yolo_label, 'yolo_conf': round(yolo_conf, 4),
+                                         'chose': 'yolo'})
+            if chosen_conf < self.min_conf or chosen_label is None:
+                rejected.append({'index': i, 'bbox': [x, y, bw, bh], 'conf': round(chosen_conf, 4)})
                 continue
-            tiles.append(label)
-            confidences.append(round(conf, 4))
+            tiles.append(chosen_label)
+            confidences.append(round(chosen_conf, 4))
         classify_ms = int((time.time() - t_cls0) * 1000)
 
         avg_conf = float(np.mean(confidences)) if confidences else 0.0
@@ -248,6 +315,7 @@ class LocalVisionService:
             'elapsed_detect_ms': detect_ms,
             'elapsed_classify_ms': classify_ms,
             'detector_used': detector_used,
+            'ensemble_swaps': ensemble_log if ensemble_log else None,
         }
 
     def health(self) -> dict:
