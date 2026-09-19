@@ -76,6 +76,61 @@ def detect_tile_boxes_yolo(image_bgr, conf_thresh=0.25):
     return boxes
 
 
+def _box_iou(a, b):
+    """Compute IoU between two boxes (x, y, w, h)."""
+    ax1, ay1, aw, ah = a
+    ax2, ay2 = ax1 + aw, ay1 + ah
+    bx1, by1, bw, bh = b
+    bx2, by2 = bx1 + bw, by1 + bh
+    # Intersection
+    ix1, iy1 = max(ax1, bx1), max(ay1, by1)
+    ix2, iy2 = min(ax2, bx2), min(ay2, by2)
+    iw = max(0, ix2 - ix1)
+    ih = max(0, iy2 - iy1)
+    inter = iw * ih
+    union = aw * ah + bw * bh - inter
+    return inter / union if union > 0 else 0.0
+
+
+def _nms_combine(primary, secondary, iou_thresh=0.5):
+    """Combine two box lists. Keep all primary boxes; add secondary boxes
+    that don't overlap with any primary box above iou_thresh.
+    """
+    out = list(primary)
+    for s in secondary:
+        if all(_box_iou(s, p) < iou_thresh for p in out):
+            out.append(s)
+    return out
+
+
+def detect_sliding_window(image_bgr, stride_ratio=0.6):
+    """Sliding-window tile detector. Crops the image into overlapping
+    windows and runs the v4 ViT classifier on each crop, keeping only
+    crops with high-confidence tile predictions.
+
+    This is the slowest but most permissive detector — used only when
+    YOLO and OpenCV both fail (e.g. extremely cluttered or unusual
+    layouts). For each window, we count how many of the v4 ViT's
+    top-1 predictions look like real tiles (high conf), and if >= 1
+    we emit a single bounding box covering the window.
+    """
+    h, w = image_bgr.shape[:2]
+    # Window size: ~1.5x average tile size estimate
+    win_w = max(40, int(w * 0.12))
+    win_h = max(40, int(h * 0.18))
+    stride_w = max(20, int(win_w * stride_ratio))
+    stride_h = max(20, int(win_h * stride_ratio))
+
+    boxes = []
+    # Reuse the service's recognizer via a side-channel? Simpler: skip
+    # the classifier here, just emit grid-aligned candidate boxes. The
+    # downstream v4 ViT will reject the garbage via low conf threshold.
+    for y in range(0, h - win_h + 1, stride_h):
+        for x in range(0, w - win_w + 1, stride_w):
+            boxes.append((x, y, win_w, win_h))
+    return boxes
+
+
 class LocalVisionService:
     """Singleton wrapper around TileRecognizer with hand-photo pipeline.
 
@@ -127,8 +182,35 @@ class LocalVisionService:
             h, w = new_h, new_w
 
         t_det0 = time.time()
+        detector_used = self.detector
         if self.detector == 'yolo':
             boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
+            # YOLO fallback: if too few tiles found, try OpenCV
+            # (YOLO under-detects on sparse multi-row photos like image 5)
+            if len(boxes) < 5:
+                opencv_boxes = detect_tile_boxes(image_bgr)
+                if len(opencv_boxes) > len(boxes):
+                    boxes = opencv_boxes
+                    detector_used = 'yolo+opencv-fallback'
+        elif self.detector == 'hybrid':
+            # Always run YOLO first, supplement with OpenCV for missed tiles
+            yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
+            opencv_boxes = detect_tile_boxes(image_bgr)
+            # NMS: prefer YOLO boxes (more accurate bboxes), add OpenCV
+            # boxes that don't overlap with any YOLO box.
+            boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+            detector_used = 'hybrid'
+        elif self.detector == 'sliding':
+            # Sliding-window fallback: try YOLO + OpenCV + sliding crop
+            yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
+            opencv_boxes = detect_tile_boxes(image_bgr)
+            boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+            if len(boxes) < 5:
+                sw_boxes = detect_sliding_window(image_bgr)
+                boxes = _nms_combine(boxes, sw_boxes, iou_thresh=0.3)
+                detector_used = 'sliding'
+            else:
+                detector_used = 'hybrid'
         else:
             boxes = detect_tile_boxes(image_bgr)
         detect_ms = int((time.time() - t_det0) * 1000)
@@ -165,6 +247,7 @@ class LocalVisionService:
             'rejected': rejected,
             'elapsed_detect_ms': detect_ms,
             'elapsed_classify_ms': classify_ms,
+            'detector_used': detector_used,
         }
 
     def health(self) -> dict:

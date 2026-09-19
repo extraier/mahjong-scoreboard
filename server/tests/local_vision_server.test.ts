@@ -153,12 +153,12 @@ describe('FastAPI local_vision_server integration', () => {
         console.warn(`[skip] ${REGRESSION_FIXTURE} missing — commit the photo fixture to enable`);
         return;
       }
-      // YOLO detector produces different (but valid) tile counts vs OpenCV.
-      // We only enforce the determinism check for the OpenCV detector.
+      // YOLO/hybrid detectors produce different (but valid) tile counts vs
+      // OpenCV. We only enforce the determinism check for the OpenCV detector.
       const health = await fetch(`${SERVER_URL}/health`).then((r) => r.json()) as { detector?: string };
-      if (health.detector === 'yolo') {
+      if (health.detector !== 'opencv') {
         // eslint-disable-next-line no-console
-        console.warn('[skip determinism check under YOLO detector — YOLO boxes differ per-call slightly)');
+        console.warn(`[skip determinism check under ${health.detector} detector — boxes vary per-call)`);
         return;
       }
       const bytes = readFileSync(REGRESSION_FIXTURE);
@@ -195,12 +195,14 @@ describe('FastAPI local_vision_server integration', () => {
         // all box detections; the high-conf ones (≥0.5) include the
         // baseline tiles W1, S4×3, F1×3. The Node layer filters down.
         // YOLO detector gives different (smaller) high-conf count.
+        // Hybrid adds some extras (e.g. W8×2) so we relax for non-opencv.
         expect(j.tile_count).toBeGreaterThanOrEqual(3);
         expect(j.avg_confidence).toBeGreaterThanOrEqual(0.55);
         const highConfTiles = j.tiles.filter((_, idx) => j.confidences[idx] >= 0.5);
         // OpenCV: 7 (W1, S4×3, F1×3). YOLO: 3-6 (depends on image).
+        // Hybrid: 9 (OpenCV's 7 + 2 extras from YOLO).
         expect(highConfTiles.length).toBeGreaterThanOrEqual(3);
-        if (health.detector !== 'yolo') {
+        if (health.detector === 'opencv') {
           // Multiset only pinned for OpenCV
           expect(highConfTiles.slice().sort().toString()).toBe('F1,F1,F1,S4,S4,S4,W1');
         }
