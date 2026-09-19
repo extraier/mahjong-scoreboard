@@ -76,3 +76,6 @@ models/mahjong-vision-finetuned-v9/
 
 # Large external datasets (re-downloaded if needed)
 models/kaggle-mahjong/
+
+# Mobile hand photos (unlabeled, used as test images only)
+models/mahjong-mobile-hands/
