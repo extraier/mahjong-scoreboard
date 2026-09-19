@@ -62,3 +62,4 @@ data/standing-tiles-2026-09-19/
 data/yolo-standing-2026-09-19/
 models/standing-tile-yolo/
 models/haselab-mahjong/
+models/haselab-mahjong-finetuned/

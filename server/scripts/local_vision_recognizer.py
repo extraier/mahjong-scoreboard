@@ -278,6 +278,28 @@ class LocalVisionService:
             boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
             boxes = _dedup_boxes(boxes)
             detector_used = 'ensemble'
+        elif self.detector == 'haselab':
+            # HaseLab 3-stage polygon+homography pipeline. Solves standing
+            # tiles by detecting polygons + warping each tile to 224x224.
+            from haselab_pipeline import HaseLabPipeline
+            if not hasattr(self, '_haselab') or self._haselab is None:
+                self._haselab = HaseLabPipeline(device=self.device, use_external_classifier=True)
+            try:
+                haselab_results = self._haselab.detect(image_bgr)
+                boxes = [r['bbox'] for r in haselab_results]
+                # Map (x,y,w,h) -> warped 224x224 BGR tile (for v5 ViT classification)
+                haselab_warped = {r['bbox']: r['warped'] for r in haselab_results}
+                haselab_labels = None  # we'll classify the warped tile ourselves
+                detector_used = 'haselab'
+            except Exception as e:
+                print(f'[haselab] error: {e}, falling back to hybrid', flush=True)
+                yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
+                opencv_boxes = detect_tile_boxes(image_bgr)
+                boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+                boxes = _dedup_boxes(boxes)
+                haselab_warped = None
+                haselab_labels = None
+                detector_used = 'haselab-fallback-hybrid'
         else:
             boxes = detect_tile_boxes(image_bgr)
         detect_ms = int((time.time() - t_det0) * 1000)
@@ -287,6 +309,10 @@ class LocalVisionService:
         yolo_labels_per_box = None
         if self.detector == 'ensemble':
             yolo_labels_per_box = _yolo_labels_for_boxes(image_bgr, boxes)
+
+        # For haselab mode, pipeline already produces labels per box.
+        haselab_labels = None
+        haselab_warped = None
 
         tiles = []
         confidences = []
@@ -307,6 +333,16 @@ class LocalVisionService:
                     ensemble_log.append({'i': i, 'v4': label, 'v4_conf': round(conf, 4),
                                          'yolo': yolo_label, 'yolo_conf': round(yolo_conf, 4),
                                          'chose': 'yolo'})
+            elif self.detector == 'haselab' and haselab_warped is not None:
+                # HaseLab pipeline already produced the perspective-corrected
+                # 224x224 warped tile. Re-classify with v5 ViT (much better on
+                # real photos than HaseLab's riichi-trained ResNet-50).
+                warped = haselab_warped.get((x, y, bw, bh))
+                if warped is not None:
+                    crop_pil = Image.fromarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
+                    label, conf = self.recognizer.classify_crop(crop_pil)
+                    chosen_label = label
+                    chosen_conf = conf
             if chosen_conf < self.min_conf or chosen_label is None:
                 rejected.append({'index': i, 'bbox': [x, y, bw, bh], 'conf': round(chosen_conf, 4)})
                 continue
