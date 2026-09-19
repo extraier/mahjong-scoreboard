@@ -67,3 +67,9 @@ models/haselab-mahjong-finetuned/
 data/real-tiles-v6/
 data/real-tiles-v6-combined/
 models/haselab-mahjong-finetuned/
+
+# Old v6-v9 model dirs (deleted, keep out of git)
+models/mahjong-vision-finetuned-v6/
+models/mahjong-vision-finetuned-v7/
+models/mahjong-vision-finetuned-v8/
+models/mahjong-vision-finetuned-v9/
