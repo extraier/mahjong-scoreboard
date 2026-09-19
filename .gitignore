@@ -41,3 +41,20 @@ gradle.properties.local
 
 # Mock server doesn't need a node_modules, but explicitly ignore local logs
 mock-server.log
+
+# Local ML models (large, downloaded at runtime)
+models/
+.mlvenv/
+
+# Sample / debug images
+/tmp/mahjong-crops/
+scripts/__pycache__/
+*.pyc
+
+models/EXPERIMENT-mahjong-vision-finetuned-v2/
+
+models/EXPERIMENT-mahjong-vision-finetuned-v3/
+
+models/mahjong-vision-finetuned-v2/checkpoint-*/
+
+server/__pycache__/

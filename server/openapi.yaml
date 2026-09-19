@@ -1,0 +1,446 @@
+openapi: 3.1.0
+info:
+  title: 麻雀神器 PRO — Backend API
+  version: 0.2.0
+  description: |
+    Phase 2 backend contract. Frontend client (Capacitor React app) calls these
+    endpoints; backend calls Firebase + Google Play Developer API + MiniMax
+    Vision per internal request.
+
+    Authentication: Firebase Auth ID token in `Authorization: Bearer <token>`
+    (header). All routes under `/api/me/*`, `/api/vision/*`, `/api/billing/*`
+    require a valid token. `/api/healthz` is public.
+
+    Error responses follow the schema in `components.schemas.ApiError`.
+    Frontend `src/lib/apiClient.ts` maps HTTP status → `ApiErrorCode` field.
+  contact:
+    name: Hermes agent
+    url: https://github.com/extraier/mahjong-scoreboard
+
+servers:
+  - url: https://mahjong-scoreboard-nine.vercel.app
+    description: Production (Vercel)
+  - url: http://localhost:8788
+    description: Local dev (Phase 2 server)
+
+tags:
+  - name: health
+  - name: entitlements
+  - name: vision
+  - name: billing
+
+paths:
+  /api/healthz:
+    get:
+      tags: [health]
+      summary: Public liveness probe
+      description: |
+        Returns server liveness + configuration flags. No auth. Always 200
+        unless process is broken. Used by Vercel deploy smoke + cron watchdog.
+      responses:
+        '200':
+          description: Server is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - ok
+                  - ts
+                  - version
+                  - visionProvider
+                  - visionConfigured
+                  - firebaseConfigured
+                  - gplayConfigured
+                properties:
+                  ok:
+                    type: boolean
+                    const: true
+                  ts:
+                    type: string
+                    format: date-time
+                  version:
+                    type: string
+                    example: '0.2.0'
+                  visionProvider:
+                    type: string
+                    enum: [minimax, disabled]
+                  visionConfigured:
+                    type: boolean
+                  firebaseConfigured:
+                    type: boolean
+                  gplayConfigured:
+                    type: boolean
+
+  /api/me/entitlements:
+    get:
+      tags: [entitlements]
+      summary: Current user's entitlement state
+      description: |
+        Returns whether the user is premium, has AI quota remaining, and what
+        ad state to show. Backend is the single source of truth for
+        entitlements — the frontend `useEntitlements` hook polls this every
+        60 s while the tab is visible.
+
+        Spec §8: a non-premium user calling `/api/vision/analyze` is rejected
+        by the backend with `AI_PREMIUM_REQUIRED`, NOT just hidden in the UI.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Entitlement state (possibly non-premium)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entitlements'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/Internal'
+
+  /api/vision/analyze:
+    post:
+      tags: [vision]
+      summary: Analyze a mahjong hand photo via MiniMax Vision
+      description: |
+        Phase 2 supports `provider=minimax` and `provider=stub`. The provider
+        is selected via `VISION_PROVIDER` env; the client passes only the
+        image and context.
+
+        Quota: each successful call consumes 1 from the user's monthly quota
+        (default 200 for premium). Non-premium users always get 403.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [image, gameMode, roundWind, seatWind]
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: 'JPEG/PNG/WebP/GIF, ≤10 MB'
+                gameMode:
+                  type: string
+                  enum: [HK, TW]
+                roundWind:
+                  type: string
+                  description: '東 / 南 / 西 / 北'
+                  example: '東'
+                seatWind:
+                  type: string
+                  description: 'Seat of winning player (東 / 南 / 西 / 北)'
+                  example: '東'
+                tilesAlreadyKnown:
+                  type: string
+                  description: 'Optional JSON-encoded hint of pre-selected tiles (debug aid)'
+      responses:
+        '200':
+          description: Vision result + remaining quota
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VisionAnalyzeResponse'
+        '400':
+          description: Invalid image (mismatched type, corrupt, etc.)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Non-premium user attempted vision call
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: AI_PREMIUM_REQUIRED
+                message: 'AI 識別需要 PRO 會員'
+        '413':
+          description: Image too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: IMAGE_TOO_LARGE
+                message: 'Image >10 MB. Compress and retry.'
+        '429':
+          description: Monthly quota exhausted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+              example:
+                code: QUOTA_EXCEEDED
+                message: '本月用量已用完，喺下月一日重置'
+                details:
+                  retryAfterDays: 12
+        '502':
+          description: Upstream provider (MiniMax) failure
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '503':
+          description: Provider disabled (VISION_PROVIDER=disabled)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+
+  /api/billing/webhook:
+    post:
+      tags: [billing]
+      summary: Google Play RTDN webhook receiver
+      description: |
+        Server-to-server endpoint. Google Play's Real-Time Developer
+        Notifications (RTDN) publish subscription lifecycle events here.
+        Backend verifies the message signature, persists the
+        subscription state to Firestore, and re-computes the user's
+        entitlement on the next /api/me/entitlements call.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message, subscription]
+              properties:
+                message:
+                  type: object
+                  description: 'Pub/Sub message envelope (base64 data)'
+                  properties:
+                    data:
+                      type: string
+                    messageId:
+                      type: string
+                    publishTime:
+                      type: string
+                subscription:
+                  type: string
+      responses:
+        '200':
+          description: Notification accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /api/billing/restore:
+    post:
+      tags: [billing]
+      summary: Restore previous Google Play purchases for current user
+      description: |
+        User-facing restore endpoint, called when the user taps
+        "Restore Purchases" in settings. Re-syncs from Google Play
+        Developer API using the saved purchase tokens.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Restore succeeded (possibly with no new subscriptions)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  restored:
+                    type: integer
+                    description: 'Number of subscriptions restored'
+                  entitlements:
+                    $ref: '#/components/schemas/Entitlements'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase Auth ID token (JWT, RS256 signed by Google)
+
+  schemas:
+    Subscription:
+      type: object
+      required:
+        - platform
+        - productId
+        - expiresAt
+        - autoRenewing
+        - purchaseToken
+      properties:
+        platform:
+          type: string
+          enum: [google_play]
+        productId:
+          type: string
+          example: 'premium_monthly'
+        expiresAt:
+          type: string
+          format: date-time
+        autoRenewing:
+          type: boolean
+        purchaseToken:
+          type: string
+          description: 'Opaque token from Google Play'
+
+    Entitlements:
+      type: object
+      required:
+        - isPremium
+        - adsEnabled
+        - canUseAi
+        - remainingAiUses
+        - resetAt
+        - subscription
+        - fetchedAt
+      properties:
+        isPremium:
+          type: boolean
+          description: 'Master toggle — true only if active subscription'
+        adsEnabled:
+          type: boolean
+          description: 'False when isPremium=true'
+        canUseAi:
+          type: boolean
+          description: 'True if isPremium && remainingAiUses > 0'
+        remainingAiUses:
+          type: integer
+          minimum: 0
+        resetAt:
+          type: [string, 'null']
+          format: date-time
+          description: 'When the quota bucket resets'
+        subscription:
+          oneOf:
+            - $ref: '#/components/schemas/Subscription'
+            - type: 'null'
+        fetchedAt:
+          type: string
+          format: date-time
+
+    MahjongVisionResult:
+      type: object
+      required:
+        - tiles
+        - flowers
+        - uncertainTiles
+        - confidence
+        - notes
+      properties:
+        tiles:
+          type: array
+          items:
+            type: string
+            pattern: '^[WTFSJH][1-9]$'
+            example: 'W1'
+        flowers:
+          type: array
+          items:
+            type: string
+            pattern: '^H[1-8]$'
+        uncertainTiles:
+          type: array
+          items:
+            type: object
+            required: [index, reason]
+            properties:
+              index:
+                type: integer
+                minimum: 0
+              reason:
+                type: string
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+        notes:
+          type: array
+          items:
+            type: string
+
+    VisionAnalyzeResponse:
+      type: object
+      required:
+        - requestId
+        - provider
+        - result
+        - usage
+      properties:
+        requestId:
+          type: string
+          example: 'req_<uuid>'
+        provider:
+          type: string
+          enum: [minimax, stub]
+        result:
+          $ref: '#/components/schemas/MahjongVisionResult'
+        usage:
+          type: object
+          properties:
+            remainingAiUses:
+              type: integer
+              minimum: 0
+
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - UNAUTHENTICATED
+            - FORBIDDEN
+            - NOT_FOUND
+            - BAD_REQUEST
+            - AI_PREMIUM_REQUIRED
+            - QUOTA_EXCEEDED
+            - IMAGE_TOO_LARGE
+            - INVALID_IMAGE
+            - PROVIDER_DISABLED
+            - PROVIDER_UNAVAILABLE
+            - INTERNAL
+            - UPSTREAM
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: UNAUTHENTICATED
+            message: 'Missing Authorization: Bearer header'
+    BadRequest:
+      description: Malformed request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    Internal:
+      description: Server-side error
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: INTERNAL
+            message: 'Internal error'
