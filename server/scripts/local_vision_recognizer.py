@@ -41,7 +41,12 @@ class LocalVisionService:
         print(f'[local_vision] model loaded in {(time.time()-t0)*1000:.0f}ms', flush=True)
 
     def classify_hand(self, image_bgr) -> dict:
-        """Run full pipeline: detect tiles -> classify each -> return JSON-able dict."""
+        """Run full pipeline: detect tiles -> classify each -> return JSON-able dict.
+
+        Returns image width/height so the caller can apply adaptive confidence
+        thresholds for low-resolution photos.
+        """
+        h, w = image_bgr.shape[:2]
         t_det0 = time.time()
         boxes = detect_tile_boxes(image_bgr)
         detect_ms = int((time.time() - t_det0) * 1000)
@@ -63,6 +68,8 @@ class LocalVisionService:
 
         avg_conf = float(np.mean(confidences)) if confidences else 0.0
         return {
+            'width': int(w),
+            'height': int(h),
             'tile_count': len(tiles),
             'tiles': tiles,
             'confidences': confidences,

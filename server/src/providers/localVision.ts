@@ -26,6 +26,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { config } from '../config.js';
 import { ApiError } from '../errors.js';
+import {
+  filterByConfidence,
+  filterInvalidTiles,
+} from '../services/tileFilter.js';
 import type { MahjongVisionResult } from '../types.js';
 import type { VisionInput, VisionProvider } from './visionProvider.js';
 
@@ -35,6 +39,8 @@ const HTTP_URL = process.env.LOCAL_VISION_HTTP_URL ?? 'http://127.0.0.1:8789';
 const USE_HTTP = (process.env.LOCAL_VISION_MODE ?? 'http') !== 'spawn';
 
 interface LocalVisionResponse {
+  width?: number;
+  height?: number;
   tile_count: number;
   tiles: string[];
   confidences: number[];
@@ -81,31 +87,66 @@ async function callHttp(
   } catch (e) {
     throw new ApiError('UPSTREAM', `local-vision response not JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
-  return normalizeToResult(payload, 'http');
+  return normalizeToResult(payload, 'http', input.gameMode);
 }
 
-function normalizeToResult(p: LocalVisionResponse, mode: 'http' | 'spawn'): MahjongVisionResult {
-  const tiles = Array.isArray(p.tiles) ? p.tiles.filter(isTile) : [];
+function normalizeToResult(
+  p: LocalVisionResponse,
+  mode: 'http' | 'spawn',
+  gameMode: 'HK' | 'TW' = 'HK',
+): MahjongVisionResult {
+  // Step 1: drop tiles that don't exist in HK/TW rules (e.g. F8/F9 hallucinations)
+  const rawTiles = Array.isArray(p.tiles) ? p.tiles.filter(isTile) : [];
   const confList = Array.isArray(p.confidences) ? p.confidences : [];
-  const avg = typeof p.avg_confidence === 'number' ? p.avg_confidence : 0;
-  const minConf = confList.length ? Math.min(...confList) : 0;
-  const uncertainTiles = confList
-    .map((c, idx) => ({ idx, conf: c }))
-    .filter(({ conf }) => conf < 0.5)
-    .map(({ idx, conf }) => ({
-      index: idx,
-      reason: `low confidence (${conf.toFixed(2)})`,
-    }));
+
+  // Step 2: apply adaptive confidence threshold based on image dimensions.
+  // For tiny/blurry photos (< 200px tall or < 600px wide), the classifier
+  // tops out at ~0.23 conf — drop the threshold to 0.2 to recover them.
+  const width = p.width ?? 1200;
+  const height = p.height ?? 200;
+  const acceptedIdx = filterByConfidence(confList, width, height);
+
+  // Map accepted indices to tiles + confidences; if a tile was rejected
+  // by confidence, exclude both tile and confidence to keep them aligned.
+  const acceptedTiles = acceptedIdx.map((i) => rawTiles[i]).filter((t): t is string => Boolean(t));
+  const acceptedConfs = acceptedIdx.map((i) => confList[i]);
+
+  // Step 3: enforce HK rule caps (max 4 copies of any single tile)
+  const filteredTiles = filterInvalidTiles(acceptedTiles, gameMode);
+
+  const minConf = acceptedConfs.length ? Math.min(...acceptedConfs) : 0;
+  const avg = acceptedConfs.length
+    ? acceptedConfs.reduce((s, c) => s + c, 0) / acceptedConfs.length
+    : 0;
+
+  // Build uncertainTiles list for the UI from BOTH the rejected-from-confidence
+  // AND the rule-filtered tiles so users can correct them in the app.
+  const filteredSet = new Set(filteredTiles);
+  const uncertainTiles: Array<{ index: number; reason: string }> = [];
+  acceptedTiles.forEach((t, i) => {
+    if (!filteredSet.has(t)) {
+      // filtered out by rule (over-cap 4 copies or invalid label)
+      uncertainTiles.push({ index: i, reason: `rejected by HK rule filter (${t})` });
+    }
+  });
+
   return {
-    tiles,
+    tiles: filteredTiles,
     flowers: [],
     uncertainTiles,
     confidence: Math.max(0, Math.min(1, avg)),
     notes: [
-      `local-vision (${mode}): ${tiles.length} tiles, min conf ${minConf.toFixed(2)}, ${p.box_count ?? tiles.length} boxes scanned`,
-      tiles.length < 13 ? 'fewer than 13 tiles detected — photo may be cropped or tiles too close together' : '',
+      `local-vision (${mode}): ${filteredTiles.length} tiles accepted, min conf ${minConf.toFixed(2)}, ${p.box_count ?? filteredTiles.length} boxes scanned, threshold ${adaptiveThresholdFor(width, height)}`,
+      filteredTiles.length < 13 ? 'fewer than 13 tiles detected — photo may be cropped or tiles too close together' : '',
     ].filter(Boolean),
   };
+}
+
+function adaptiveThresholdFor(w: number, h: number): string {
+  // Mirrors tileFilter.adaptiveMinConfidence for note formatting only
+  if (h < 100 || w < 600) return '0.2 (low-res)';
+  if (h < 200 || w < 1000) return '0.3 (mid-res)';
+  return '0.4 (default)';
 }
 
 async function runPython(args: string[], timeoutMs: number): Promise<{ stdout: string; stderr: string; code: number }> {
@@ -167,20 +208,31 @@ async function callSpawn(input: VisionInput): Promise<MahjongVisionResult> {
     }
     const tiles = Array.isArray(parsed.tiles) ? (parsed.tiles as string[]).filter(isTile) : [];
     const confList = Array.isArray(parsed.confidences) ? (parsed.confidences as number[]) : [];
-    const avg = typeof parsed.avg_confidence === 'number' ? parsed.avg_confidence : 0;
-    const minConf = confList.length ? Math.min(...confList) : 0;
-    const uncertainTiles = confList
-      .map((c, idx) => ({ idx, conf: c }))
-      .filter(({ conf }) => conf < 0.5)
-      .map(({ idx, conf }) => ({ index: idx, reason: `low confidence (${conf.toFixed(2)})` }));
+
+    // Spawn mode doesn't know image dimensions; assume default-res.
+    const acceptedIdx = filterByConfidence(confList, 1200, 200);
+    const acceptedTiles = acceptedIdx.map((i) => tiles[i]).filter((t): t is string => Boolean(t));
+    const acceptedConfs = acceptedIdx.map((i) => confList[i]);
+    const filteredTiles = filterInvalidTiles(acceptedTiles, input.gameMode);
+    const minConf = acceptedConfs.length ? Math.min(...acceptedConfs) : 0;
+    const avg = acceptedConfs.length
+      ? acceptedConfs.reduce((s, c) => s + c, 0) / acceptedConfs.length
+      : 0;
+    const filteredSet = new Set(filteredTiles);
+    const uncertainTiles: Array<{ index: number; reason: string }> = [];
+    acceptedTiles.forEach((t, i) => {
+      if (!filteredSet.has(t)) {
+        uncertainTiles.push({ index: i, reason: `rejected by HK rule filter (${t})` });
+      }
+    });
     return {
-      tiles,
+      tiles: filteredTiles,
       flowers: [],
       uncertainTiles,
       confidence: Math.max(0, Math.min(1, avg)),
       notes: [
-        `local-vision (spawn): ${tiles.length} tiles, min conf ${minConf.toFixed(2)}`,
-        tiles.length < 13 ? 'fewer than 13 tiles detected — photo may be cropped or tiles too close together' : '',
+        `local-vision (spawn): ${filteredTiles.length} tiles, min conf ${minConf.toFixed(2)}`,
+        filteredTiles.length < 13 ? 'fewer than 13 tiles detected — photo may be cropped or tiles too close together' : '',
       ].filter(Boolean),
     };
   } finally {
