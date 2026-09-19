@@ -32,8 +32,13 @@ class LocalVisionService:
     allocated once at startup, reused across requests.
     """
 
-    def __init__(self, device='mps', min_conf=0.4):
+    def __init__(self, device='mps', min_conf=0.0):
         self.device = device if torch.backends.mps.is_available() else 'cpu'
+        # Python side has NO filter — return every detection with its conf.
+        # The Node layer applies the adaptive threshold via
+        # tileFilter.filterByConfidence(). This lets very-low-res photos
+        # recover tiles that would otherwise be silently dropped (the
+        # classifier tops out at ~0.23 conf on truly tiny images).
         self.min_conf = min_conf
         print(f'[local_vision] loading TileRecognizer on {self.device}...', flush=True)
         t0 = time.time()
@@ -45,8 +50,25 @@ class LocalVisionService:
 
         Returns image width/height so the caller can apply adaptive confidence
         thresholds for low-resolution photos.
+
+        Pre-upscales tiny images (height < 100 or width < 400) so the
+        detector (OpenCV findContours) can find tile boundaries. The
+        classifier still operates on the upscaled crop area, scaled to
+        224×224 as before.
         """
-        h, w = image_bgr.shape[:2]
+        orig_h, orig_w = image_bgr.shape[:2]
+        h, w = orig_h, orig_w
+        upscale_applied = False
+        upscale_note = None
+        if h < 100 or w < 400:
+            # Bring height to >= 200px so OpenCV can find contours.
+            scale = max(2, (200 + h - 1) // max(1, h))
+            new_w, new_h = w * scale, h * scale
+            image_bgr = cv2.resize(image_bgr, (new_w, new_h), interpolation=cv2.INTER_CUBIC)
+            upscale_applied = True
+            upscale_note = f'pre-upscaled {orig_w}x{orig_h} -> {new_w}x{new_h} (x{scale}) for detection'
+            h, w = new_h, new_w
+
         t_det0 = time.time()
         boxes = detect_tile_boxes(image_bgr)
         detect_ms = int((time.time() - t_det0) * 1000)
@@ -70,6 +92,10 @@ class LocalVisionService:
         return {
             'width': int(w),
             'height': int(h),
+            'original_width': int(orig_w),
+            'original_height': int(orig_h),
+            'upscale_applied': upscale_applied,
+            'upscale_note': upscale_note,
             'tile_count': len(tiles),
             'tiles': tiles,
             'confidences': confidences,

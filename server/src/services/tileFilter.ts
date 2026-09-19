@@ -86,15 +86,17 @@ export function filterInvalidTiles(tiles: readonly string[], mode: GameMode = 'H
  *
  * Empirically (2026-09-19):
  *   - 600x200+ photos: conf 0.4+ is reliable → threshold 0.4
- *   - < 200px tall: classifier tops out at ~0.23 conf → threshold 0.2
+ *   - < 80px tall: classifier tops out at ~0.23 conf (e.g. 320x35) → 0.2
+ *   - < 200px tall but ≥ 80px: keep 0.4 (don't accept noise like T9)
  *
  * @param width   image width in pixels
  * @param height  image height in pixels
  * @returns       minimum confidence to accept a tile (0..1)
  */
 export function adaptiveMinConfidence(width: number, height: number): number {
-  if (height < 100 || width < 600) return 0.2;
-  if (height < 200 || width < 1000) return 0.3;
+  // Only relax threshold for very-tiny images. Mid-res still uses 0.4
+  // because the classifier is reliable enough on real photos.
+  if (height < 80 || width < 400) return 0.2;
   return 0.4;
 }
 

@@ -41,6 +41,10 @@ const USE_HTTP = (process.env.LOCAL_VISION_MODE ?? 'http') !== 'spawn';
 interface LocalVisionResponse {
   width?: number;
   height?: number;
+  original_width?: number;
+  original_height?: number;
+  upscale_applied?: boolean;
+  upscale_note?: string | null;
   tile_count: number;
   tiles: string[];
   confidences: number[];
@@ -99,12 +103,18 @@ function normalizeToResult(
   const rawTiles = Array.isArray(p.tiles) ? p.tiles.filter(isTile) : [];
   const confList = Array.isArray(p.confidences) ? p.confidences : [];
 
-  // Step 2: apply adaptive confidence threshold based on image dimensions.
-  // For tiny/blurry photos (< 200px tall or < 600px wide), the classifier
-  // tops out at ~0.23 conf — drop the threshold to 0.2 to recover them.
-  const width = p.width ?? 1200;
-  const height = p.height ?? 200;
+  // Step 2: apply adaptive confidence threshold based on ORIGINAL image
+  // dimensions (not the upscaled ones used for detection). For tiny photos
+  // (< 200px tall or < 600px wide), the classifier tops out at ~0.23
+  // conf — drop the threshold to 0.2 to recover them.
+  const width = p.original_width ?? p.width ?? 1200;
+  const height = p.original_height ?? p.height ?? 200;
   const acceptedIdx = filterByConfidence(confList, width, height);
+
+  // Step 4: detect multi-row compositions and emit a hint in notes so the
+  // UI can prompt the user to crop. A 14-tile hand is one row; if we
+  // detect many more boxes than that, it's probably multi-row.
+  const isLikelyMultiRow = (p.box_count ?? 0) > 16;
 
   // Map accepted indices to tiles + confidences; if a tile was rejected
   // by confidence, exclude both tile and confidence to keep them aligned.
@@ -130,6 +140,8 @@ function normalizeToResult(
     }
   });
 
+  const upscaleNote = p.upscale_applied && p.upscale_note ? p.upscale_note : '';
+
   return {
     tiles: filteredTiles,
     flowers: [],
@@ -137,6 +149,10 @@ function normalizeToResult(
     confidence: Math.max(0, Math.min(1, avg)),
     notes: [
       `local-vision (${mode}): ${filteredTiles.length} tiles accepted, min conf ${minConf.toFixed(2)}, ${p.box_count ?? filteredTiles.length} boxes scanned, threshold ${adaptiveThresholdFor(width, height)}`,
+      upscaleNote,
+      isLikelyMultiRow
+        ? `multi-row composition detected (${p.box_count} boxes found) — for best results, crop to a single row before scanning`
+        : '',
       filteredTiles.length < 13 ? 'fewer than 13 tiles detected — photo may be cropped or tiles too close together' : '',
     ].filter(Boolean),
   };
@@ -144,8 +160,7 @@ function normalizeToResult(
 
 function adaptiveThresholdFor(w: number, h: number): string {
   // Mirrors tileFilter.adaptiveMinConfidence for note formatting only
-  if (h < 100 || w < 600) return '0.2 (low-res)';
-  if (h < 200 || w < 1000) return '0.3 (mid-res)';
+  if (h < 80 || w < 400) return '0.2 (very-low-res)';
   return '0.4 (default)';
 }
 

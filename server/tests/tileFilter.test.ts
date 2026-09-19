@@ -94,18 +94,19 @@ describe('filterInvalidTiles', () => {
 });
 
 describe('adaptiveMinConfidence', () => {
-  it('returns 0.2 for tiny images (height < 100 or width < 600)', () => {
+  it('returns 0.2 for very-low-res images (height < 80 or width < 400)', () => {
     expect(adaptiveMinConfidence(320, 35)).toBe(0.2);
-    expect(adaptiveMinConfidence(500, 200)).toBe(0.2);
-    expect(adaptiveMinConfidence(1199, 99)).toBe(0.2);
+    expect(adaptiveMinConfidence(350, 70)).toBe(0.2);
+    expect(adaptiveMinConfidence(390, 200)).toBe(0.2);
   });
 
-  it('returns 0.3 for mid-resolution (height 100-200 or width 600-1000)', () => {
-    expect(adaptiveMinConfidence(800, 150)).toBe(0.3);
-    expect(adaptiveMinConfidence(900, 180)).toBe(0.3);
+  it('returns 0.4 for mid-res images (height 80-200, width 400+)', () => {
+    expect(adaptiveMinConfidence(598, 190)).toBe(0.4);
+    expect(adaptiveMinConfidence(600, 211)).toBe(0.4);
+    expect(adaptiveMinConfidence(800, 150)).toBe(0.4);
   });
 
-  it('returns 0.4 for high-resolution (height >= 200 AND width >= 1000)', () => {
+  it('returns 0.4 for high-res images (height >= 200 AND width >= 400)', () => {
     expect(adaptiveMinConfidence(1200, 200)).toBe(0.4);
     expect(adaptiveMinConfidence(1920, 1080)).toBe(0.4);
     expect(adaptiveMinConfidence(1500, 250)).toBe(0.4);
@@ -120,9 +121,9 @@ describe('filterByConfidence', () => {
     expect(accepted).toEqual([0, 2, 4]);
   });
 
-  it('relaxes threshold for low-res images', () => {
+  it('relaxes threshold for very-low-res images (height < 80)', () => {
     const confs = [0.5, 0.3, 0.45, 0.1, 0.7];
-    // Low-res: threshold 0.2 — keeps 0.3+0.1+0.7 etc above
+    // Very-low-res: threshold 0.2 — keeps 0.3+0.1+0.7 etc above
     const accepted = filterByConfidence(confs, 320, 35);
     expect(accepted).toEqual([0, 1, 2, 4]);
   });
@@ -133,7 +134,7 @@ describe('filterByConfidence', () => {
 
   it('returns empty array when all confidences below threshold', () => {
     expect(filterByConfidence([0.1, 0.2, 0.3], 1200, 200)).toEqual([]);
-    // but at low-res threshold 0.2, 0.2 and 0.3 pass (>= threshold)
+    // but at very-low-res threshold 0.2, 0.2 and 0.3 pass (>= threshold)
     expect(filterByConfidence([0.1, 0.2, 0.3], 320, 35)).toEqual([1, 2]);
   });
 });

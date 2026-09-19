@@ -178,16 +178,18 @@ describe('FastAPI local_vision_server integration', () => {
         form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'dduiduhu.jpg');
         const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
         const j = (await r.json()) as AnalyzeResponse;
-        // As of 2026-09-19, baseline = 7 tiles, avg conf 0.642 (recorded in git log).
-        // Adjust these thresholds only if you intentionally improve the model.
+        // As of 2026-09-19 (post-upscaling + min_conf=0.0): FastAPI returns
+        // all 9 box detections; the high-conf ones (≥0.5) include the 7
+        // baseline tiles W1, S4×3, F1×3 + some additional detections.
+        // The Node layer filters down to 7; see tests/vision.test.ts.
         expect(j.tile_count).toBeGreaterThanOrEqual(3);
         expect(j.avg_confidence).toBeGreaterThanOrEqual(0.55);
-        // All tiles should be marked as known (not in uncertain list)
-        // Note: the /api/vision/analyze Node response wraps these inside `result`;
-        //       the raw FastAPI /analyze response uses `tiles` / `confidence`.
+        const highConfTiles = j.tiles.filter((_, idx) => j.confidences[idx] >= 0.5);
+        expect(highConfTiles.length).toBe(7);
+        expect(highConfTiles.slice().sort().toString()).toBe('F1,F1,F1,S4,S4,S4,W1');
       });
 
-      it('REGRESSION: second hand produces W1×3 + T3×3 + F6×2 multiset (8 tiles, conf ≥0.60)', async () => {
+      it('REGRESSION: second hand raw FastAPI returns 14 detections, 8 high-conf', async () => {
         if (!readyOnly()) return;
         const FIX = join(__dirname, 'fixtures', 'mixed-melded-eyes-hand.jpg');
         if (!existsSync(FIX)) return;
@@ -196,12 +198,15 @@ describe('FastAPI local_vision_server integration', () => {
         form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'mixed.jpg');
         const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
         const j = (await r.json()) as AnalyzeResponse;
-        // Baseline 2026-09-19: 8 tiles, avg conf 0.626
-        expect(j.tile_count).toBe(8);
-        expect(j.avg_confidence).toBeGreaterThanOrEqual(0.60);
-        const sorted = j.tiles.slice().sort().toString();
-        // Pin multiset — model drift will surface as mismatch
-        expect(sorted).toBe('F6,F6,T3,T3,T3,W1,W1,W1');
+        // As of 2026-09-19 (post-upscaling + min_conf=0.0): FastAPI returns
+        // ALL 14 box detections with their confidences (no Python-side filter).
+        // The Node layer's adaptive threshold filters down to 8 high-conf
+        // tiles; see tests/vision.test.ts for the filtered assertion.
+        expect(j.tile_count).toBe(14);
+        // Verify the 8 high-conf ones are exactly the expected regression multiset.
+        const highConfTiles = j.tiles.filter((_, idx) => j.confidences[idx] >= 0.5);
+        expect(highConfTiles.length).toBe(8);
+        expect(highConfTiles.slice().sort().toString()).toBe('F6,F6,T3,T3,T3,W1,W1,W1');
       });
 
   it('POST /analyze_json accepts base64 payload', async () => {
