@@ -17,7 +17,7 @@
         <string>--host</string>
         <string>127.0.0.1</string>
         <string>--port</string>
-        <integer>8789</integer>
+        <string>8789</string>
     </array>
 
     <!-- Working directory inside the project (mlvenv is local-relative,
