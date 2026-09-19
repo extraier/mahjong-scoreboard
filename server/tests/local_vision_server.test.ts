@@ -170,22 +170,39 @@ describe('FastAPI local_vision_server integration', () => {
     });
 
     it('REGRESSION: 對對胡 photo detects ≥3 tiles with conf ≥0.55 (frozen baseline)', async () => {
-      if (!readyOnly()) return;
-      const REGRESSION_FIXTURE = join(__dirname, 'fixtures', 'dduiduhu-3fan-hand.jpg');
-      if (!existsSync(REGRESSION_FIXTURE)) return;
-      const bytes = readFileSync(REGRESSION_FIXTURE);
-      const form = new FormData();
-      form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'dduiduhu.jpg');
-      const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
-      const j = (await r.json()) as AnalyzeResponse;
-      // As of 2026-09-19, baseline = 7 tiles, avg conf 0.642 (recorded in git log).
-      // Adjust these thresholds only if you intentionally improve the model.
-      expect(j.tile_count).toBeGreaterThanOrEqual(3);
-      expect(j.avg_confidence).toBeGreaterThanOrEqual(0.55);
-      // All tiles should be marked as known (not in uncertain list)
-      // Note: the /api/vision/analyze Node response wraps these inside `result`;
-      //       the raw FastAPI /analyze response uses `tiles` / `confidence`.
-    });
+        if (!readyOnly()) return;
+        const REGRESSION_FIXTURE = join(__dirname, 'fixtures', 'dduiduhu-3fan-hand.jpg');
+        if (!existsSync(REGRESSION_FIXTURE)) return;
+        const bytes = readFileSync(REGRESSION_FIXTURE);
+        const form = new FormData();
+        form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'dduiduhu.jpg');
+        const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
+        const j = (await r.json()) as AnalyzeResponse;
+        // As of 2026-09-19, baseline = 7 tiles, avg conf 0.642 (recorded in git log).
+        // Adjust these thresholds only if you intentionally improve the model.
+        expect(j.tile_count).toBeGreaterThanOrEqual(3);
+        expect(j.avg_confidence).toBeGreaterThanOrEqual(0.55);
+        // All tiles should be marked as known (not in uncertain list)
+        // Note: the /api/vision/analyze Node response wraps these inside `result`;
+        //       the raw FastAPI /analyze response uses `tiles` / `confidence`.
+      });
+
+      it('REGRESSION: second hand produces W1×3 + T3×3 + F6×2 multiset (8 tiles, conf ≥0.60)', async () => {
+        if (!readyOnly()) return;
+        const FIX = join(__dirname, 'fixtures', 'mixed-melded-eyes-hand.jpg');
+        if (!existsSync(FIX)) return;
+        const bytes = readFileSync(FIX);
+        const form = new FormData();
+        form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'mixed.jpg');
+        const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
+        const j = (await r.json()) as AnalyzeResponse;
+        // Baseline 2026-09-19: 8 tiles, avg conf 0.626
+        expect(j.tile_count).toBe(8);
+        expect(j.avg_confidence).toBeGreaterThanOrEqual(0.60);
+        const sorted = j.tiles.slice().sort().toString();
+        // Pin multiset — model drift will surface as mismatch
+        expect(sorted).toBe('F6,F6,T3,T3,T3,W1,W1,W1');
+      });
 
   it('POST /analyze_json accepts base64 payload', async () => {
     if (!readyOnly()) return;
