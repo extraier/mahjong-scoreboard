@@ -50,3 +50,11 @@ models/
 /tmp/mahjong-crops/
 scripts/__pycache__/
 *.pyc
+
+models/EXPERIMENT-mahjong-vision-finetuned-v2/
+
+models/EXPERIMENT-mahjong-vision-finetuned-v3/
+
+models/mahjong-vision-finetuned-v2/checkpoint-*/
+
+server/__pycache__/

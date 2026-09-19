@@ -1,0 +1,161 @@
+{
+  "_meta": {
+    "labeling_method": "vision-describe.py (MiniMax-M3 same-model via OAuth), 2-opinion consensus",
+    "labeling_date": "2026-09-19",
+    "labeler": "Hermes agent + 2 vision reads",
+    "note": "Each image's row by row tiles. Top/bottom rows are HIGH confidence (2 reads agreed); middle rows MEDIUM (1 read committed).",
+    "notation": "W1-W9=萬, T1-T9=索/bamboo, D1-D9=筒/dots, F1=東, F2=南, F3=西, F4=北, F5=發, F6=中, F7=白",
+    "fine_tune_v2_experiment": {
+      "date": "2026-09-19",
+      "base_model": "/Users/roger/mahjong-scoreboard/models/mahjong-vision-finetuned",
+      "output_model": "/Users/roger/mahjong-scoreboard/models/mahjong-vision-finetuned-v2",
+      "fresh_real_photos_added": 15,
+      "fresh_classes_added": [
+        "1b (D1)",
+        "2b (D2)",
+        "3b (D3)"
+      ],
+      "epochs": 3,
+      "batch_size": 8,
+      "learning_rate": 1e-05,
+      "eval_accuracy_on_souls_tiles": [
+        0.9897,
+        0.984,
+        0.9932
+      ],
+      "real_photo_performance": {
+        "image_1_dduiduhu_v2": {
+          "tile_count": 1,
+          "tiles": [
+            "W1"
+          ],
+          "note": "CATASTROPHIC FORGETTING — v1 detected 7 tiles"
+        },
+        "image_2_mixed_v2": {
+          "tile_count": 8,
+          "tiles": [
+            "W1",
+            "W1",
+            "W1",
+            "T3",
+            "T3",
+            "T3",
+            "F6",
+            "F6"
+          ]
+        },
+        "image_3_multirw_v2": {
+          "tile_count": 8,
+          "tiles": [
+            "W1",
+            "W1",
+            "W1",
+            "T3",
+            "T3",
+            "T3",
+            "F6",
+            "F6"
+          ]
+        }
+      },
+      "conclusion": "Souls_tiles eval accuracy was misleading — that dataset has 1054 in-app graphics, and our 15 fresh real-photo crops are a TINY fraction. Even at 99% souls accuracy, v2 catastrophically forgot T4 and F1 from image 1. The 15:1054 imbalance caused the model to over-fit the new crops and lose previous learned patterns.",
+      "recommendation": "To fine-tune without forgetting, need: (a) held-out test set on REAL photos, not souls. (b) lower learning rate (1e-6 instead of 1e-5). (c) fewer epochs (1, not 3). (d) more real-photo training data (50+ images, ideally 5+ per new class). (e) Or freeze most layers and only fine-tune the classifier head."
+    }
+  },
+  "image_1_dduiduhu_3fan": {
+    "file": "tests/fixtures/dduiduhu-3fan-hand.jpg",
+    "rows": [
+      {
+        "row": "all",
+        "tiles": [
+          "W1",
+          "W1",
+          "W1",
+          "T4",
+          "T4",
+          "T4",
+          "F1",
+          "F1",
+          "F1"
+        ],
+        "confidence": "MEDIUM"
+      }
+    ],
+    "note": "9 visible tiles in single row; W1 + W4 pungs (or T4 if misread) + F1×3 wind pungs"
+  },
+  "image_2_mixed_meld_eyes": {
+    "file": "tests/fixtures/mixed-melded-eyes-hand.jpg",
+    "rows": [
+      {
+        "row": "all",
+        "tiles": [
+          "W1",
+          "W1",
+          "W1",
+          "T3",
+          "T3",
+          "T3",
+          "F6",
+          "F6",
+          "F6"
+        ],
+        "confidence": "MEDIUM"
+      }
+    ],
+    "note": "9 detected by ViT; F6 is suspicious — could be 中/發 misread"
+  },
+  "image_3_multi_row": {
+    "file": "tests/fixtures/multi-row-composition.jpg",
+    "rows": [
+      {
+        "row": 1,
+        "tiles": [
+          "W1",
+          "W1",
+          "W1",
+          "D1",
+          "D2",
+          "D3"
+        ],
+        "confidence": "HIGH (2 reads + cross-check)"
+      },
+      {
+        "row": 2,
+        "tiles": [
+          "D3",
+          "D3",
+          "D3",
+          "T2",
+          "T2",
+          "T2",
+          "J1",
+          "J1"
+        ],
+        "confidence": "MEDIUM (1 read committed)"
+      },
+      {
+        "row": 3,
+        "tiles": [
+          "?"
+        ],
+        "confidence": "LOW (spiraled tiles, partially unclear)"
+      },
+      {
+        "row": 4,
+        "tiles": [
+          "W1",
+          "W2",
+          "W3",
+          "W4",
+          "W5",
+          "W6",
+          "W7",
+          "W8",
+          "W9"
+        ],
+        "confidence": "HIGH (2 reads agreed)"
+      }
+    ],
+    "note": "Multi-row layout, only row 1 used for fine-tune (high-confidence labels)"
+  }
+}

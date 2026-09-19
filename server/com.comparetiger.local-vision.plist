@@ -45,20 +45,26 @@
          OLLAMA_KEEP_ALIVE=0 so the ollama daemon (if running) stays unloaded,
          PYTHONUNBUFFERED=1 so logs flush immediately. -->
     <key>EnvironmentVariables</key>
-    <dict>
-        <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
-        <key>HOME</key>
-        <string>/Users/roger</string>
-        <key>USER</key>
-        <string>roger</string>
-        <key>OLLAMA_KEEP_ALIVE</key>
-        <string>0</string>
-        <key>PYTHONUNBUFFERED</key>
-        <string>1</string>
-        <key>VIRTUAL_ENV</key>
-        <string>/Users/roger/mahjong-scoreboard/server/.mlvenv</string>
-    </dict>
+        <dict>
+            <key>PATH</key>
+            <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+            <key>HOME</key>
+            <string>/Users/roger</string>
+            <key>USER</key>
+            <string>roger</string>
+            <key>VIRTUAL_ENV</key>
+            <string>/Users/roger/mahjong-scoreboard/server/.mlvenv</string>
+            <key>PYTHONUNBUFFERED</key>
+            <string>1</string>
+            <key>OLLAMA_KEEP_ALIVE</key>
+            <string>0</string>
+            <!-- 2026-09-19: v1 (mahjong-vision-finetuned) is the production model.
+                 v2 and v3 fine-tunes exist but caused catastrophic forgetting on
+                 unseen classes. Stay on v1 until we have 50+ real-photo crops per
+                 class, or freeze most layers + only train head. -->
+            <key>LOCAL_VISION_MODEL_DIR</key>
+            <string>/Users/roger/mahjong-scoreboard/models/mahjong-vision-finetuned</string>
+        </dict>
 
     <!-- Limit ResidentSetSize so a memory leak doesn't OOM the Mac mini. -->
     <key>SoftResourceLimits</key>
