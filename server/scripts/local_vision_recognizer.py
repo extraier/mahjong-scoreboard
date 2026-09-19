@@ -147,6 +147,19 @@ def _nms_combine(primary, secondary, iou_thresh=0.5):
     return out
 
 
+def _dedup_boxes(boxes, iou_thresh=0.5):
+    """Remove near-duplicate boxes. Keeps the first occurrence of each
+    cluster of overlapping boxes. Used after combining YOLO+OpenCV where
+    each detector can independently emit the same tile (e.g. duplicate
+    YOLO detections on image 8 returned T7+T6 for the same tile).
+    """
+    out = []
+    for b in boxes:
+        if all(_box_iou(b, p) < iou_thresh for p in out):
+            out.append(b)
+    return out
+
+
 def detect_sliding_window(image_bgr, stride_ratio=0.6):
     """Sliding-window tile detector. Crops the image into overlapping
     windows and runs the v4 ViT classifier on each crop, keeping only
@@ -236,6 +249,7 @@ class LocalVisionService:
                 if len(opencv_boxes) > len(boxes):
                     boxes = opencv_boxes
                     detector_used = 'yolo+opencv-fallback'
+            boxes = _dedup_boxes(boxes)
         elif self.detector == 'hybrid':
             # Always run YOLO first, supplement with OpenCV for missed tiles
             yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
@@ -243,6 +257,7 @@ class LocalVisionService:
             # NMS: prefer YOLO boxes (more accurate bboxes), add OpenCV
             # boxes that don't overlap with any YOLO box.
             boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+            boxes = _dedup_boxes(boxes)
             detector_used = 'hybrid'
         elif self.detector == 'sliding':
             # Sliding-window fallback: try YOLO + OpenCV + sliding crop
@@ -255,11 +270,13 @@ class LocalVisionService:
                 detector_used = 'sliding'
             else:
                 detector_used = 'hybrid'
+            boxes = _dedup_boxes(boxes)
         elif self.detector == 'ensemble':
             # Hybrid detector + ensemble classification (v4 ViT + YOLO label)
             yolo_boxes = detect_tile_boxes_yolo(image_bgr, conf_thresh=0.20)
             opencv_boxes = detect_tile_boxes(image_bgr)
             boxes = _nms_combine(yolo_boxes, opencv_boxes, iou_thresh=0.5)
+            boxes = _dedup_boxes(boxes)
             detector_used = 'ensemble'
         else:
             boxes = detect_tile_boxes(image_bgr)
