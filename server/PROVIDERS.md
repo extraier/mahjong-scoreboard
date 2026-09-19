@@ -186,6 +186,39 @@ Ollama daemon: NOT loaded. Total idle footprint: **~320 MB**.
 - **`/analyze_json`** accepts `{ image_b64 }` for callers that prefer
   JSON over multipart (e.g., some Vercel edge runtimes).
 
+### launchd — auto-start at boot
+
+Production setup uses a macOS LaunchAgent so the FastAPI server boots
+automatically when the user logs in (or at system start on managed Macs).
+
+```bash
+# install once
+cp ~/mahjong-scoreboard/server/com.comparetiger.local-vision.plist \
+   ~/Library/LaunchAgents/
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.comparetiger.local-vision.plist
+
+# check status
+launchctl list | grep local-vision
+curl http://127.0.0.1:8789/health
+
+# stop / disable
+launchctl bootout gui/$(id -u)/com.comparetiger.local-vision
+```
+
+Key plist settings:
+- `RunAtLoad = true` — auto-start after `launchctl bootstrap`
+- `KeepAlive + ThrottleInterval=10` — restart on crash (with back-off)
+- `ProcessType = Interactive` — disables App Nap so MPS (Metal) keeps warm
+- `SoftResourceLimits.ResidentSetSize = 2 GB` — caps memory blast-radius
+- `PYTHONUNBUFFERED=1` + `VIRTUAL_ENV=.mlvenv` — ensures correct interpreter + flushes logs
+
+Logs land at `/tmp/local_vision.launchd.log` (stdout) and
+`/tmp/local_vision.launchd.err` (stderr).
+
+Note: when invoked *through* the Hermes gateway, `launchctl bootstrap`
+is blocked by the smart-approval policy (registers a persistent service).
+Bootstrap from a regular shell, or via this Hermes skill's external action.
+
 ## Provider switch cost
 
 | From | To | Cost |

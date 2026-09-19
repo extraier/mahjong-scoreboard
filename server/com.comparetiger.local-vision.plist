@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.comparetiger.local-vision</string>
+
+    <!-- Launch uvicorn directly. The wrapper launcher was added/friction:
+         when the wrapper exits 0 (after curl /health succeeds), launchd sees
+         a clean exit and tears the process down. launchd wants to BE the
+         owner of the long-running python process, so call python directly. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/Users/roger/mahjong-scoreboard/server/.mlvenv/bin/python</string>
+        <string>-u</string>
+        <string>/Users/roger/mahjong-scoreboard/server/scripts/local_vision_server.py</string>
+        <string>--host</string>
+        <string>127.0.0.1</string>
+        <string>--port</string>
+        <integer>8789</integer>
+    </array>
+
+    <!-- Working directory inside the project (mlvenv is local-relative,
+         detect_tile_boxes uses relative module imports, etc.) -->
+    <key>WorkingDirectory</key>
+    <string>/Users/roger/mahjong-scoreboard/server</string>
+
+    <!-- Auto-start at login / boot -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Restart on any non-zero exit; throttle so we don't tight-loop. -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>ThrottleInterval</key>
+        <integer>10</integer>
+    </dict>
+
+    <!-- ProcessType = Interactive so the server can use MPS (Metal) without
+         being throttled by App Nap during a /health heartbeat. -->
+    <key>ProcessType</key>
+    <string>Interactive</string>
+
+    <!-- Minimal env: PATH for venv lookup, HOME for writing temp files,
+         OLLAMA_KEEP_ALIVE=0 so the ollama daemon (if running) stays unloaded,
+         PYTHONUNBUFFERED=1 so logs flush immediately. -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+        <key>HOME</key>
+        <string>/Users/roger</string>
+        <key>USER</key>
+        <string>roger</string>
+        <key>OLLAMA_KEEP_ALIVE</key>
+        <string>0</string>
+        <key>PYTHONUNBUFFERED</key>
+        <string>1</string>
+        <key>VIRTUAL_ENV</key>
+        <string>/Users/roger/mahjong-scoreboard/server/.mlvenv</string>
+    </dict>
+
+    <!-- Limit ResidentSetSize so a memory leak doesn't OOM the Mac mini. -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>ResidentSetSize</key>
+        <integer>2097152</integer>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>/tmp/local_vision.launchd.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/local_vision.launchd.err</string>
+
+    <key>Comment</key>
+    <string>Mahjong local vision FastAPI server (ViT model warm in RAM).</string>
+</dict>
+</plist>
