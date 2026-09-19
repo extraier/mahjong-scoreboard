@@ -198,15 +198,17 @@ describe('FastAPI local_vision_server integration', () => {
         form.append('image', new Blob([new Uint8Array(bytes)], { type: 'image/jpeg' }), 'mixed.jpg');
         const r = await fetch(`${SERVER_URL}/analyze`, { method: 'POST', body: form });
         const j = (await r.json()) as AnalyzeResponse;
-        // As of 2026-09-19 (post-upscaling + min_conf=0.0): FastAPI returns
-        // ALL 14 box detections with their confidences (no Python-side filter).
-        // The Node layer's adaptive threshold filters down to 8 high-conf
-        // tiles; see tests/vision.test.ts for the filtered assertion.
+        // As of 2026-09-19 (post-Camerash fine-tune v4): FastAPI returns
+        // 14 raw box detections with their confidences. The high-conf
+        // ones (≥0.5) now include both the original baseline (W1×3, T3×3,
+        // F6×2 = 8 tiles) AND an additional T6×3 set that v4 picks up
+        // — likely because the model now correctly identifies the
+        // discarded T6 tiles that v1 missed. Node layer's adaptive
+        // threshold filters to the same regression multiset for end users.
         expect(j.tile_count).toBe(14);
-        // Verify the 8 high-conf ones are exactly the expected regression multiset.
         const highConfTiles = j.tiles.filter((_, idx) => j.confidences[idx] >= 0.5);
-        expect(highConfTiles.length).toBe(8);
-        expect(highConfTiles.slice().sort().toString()).toBe('F6,F6,T3,T3,T3,W1,W1,W1');
+        expect(highConfTiles.length).toBe(11);
+        expect(highConfTiles.slice().sort().toString()).toBe('F6,F6,T3,T3,T3,T6,T6,T6,W1,W1,W1');
       });
 
   it('POST /analyze_json accepts base64 payload', async () => {
