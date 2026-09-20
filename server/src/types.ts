@@ -63,3 +63,29 @@ export interface ApiErrorResponse {
   message: string;
   details?: Record<string, unknown>;
 }
+
+/**
+ * Body of POST /api/vision/correct — the player's correction to a previous
+ * AI vision call. The frontend sends the request_id (returned from analyze)
+ * plus the corrected tile list. Optional note + photo_consent for the
+ * ground-truth dataset.
+ */
+export interface VisionCorrectRequest {
+  /** requestId returned by /api/vision/analyze. */
+  request_id: string;
+  /** Ground-truth tiles (what the player says they actually had). */
+  corrected_tiles: string[];
+  /** Optional free-text note (e.g. "left tile was partially occluded"). */
+  note?: string;
+  /** Whether the user consents to using the original photo for retraining. */
+  photo_consent: boolean;
+}
+
+export interface VisionCorrectResponse {
+  /** Same as input request_id, for client correlation. */
+  request_id: string;
+  /** Number of tiles that differed from the AI prediction. */
+  diff_count: number;
+  /** Confirmation message in zh-HK. */
+  message: string;
+}

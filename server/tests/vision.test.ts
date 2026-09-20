@@ -188,6 +188,78 @@ describe('POST /api/vision/analyze (5-step handler)', () => {
     expect(res.status).toBe(400);
     expect(res.body.code).toBe('INVALID_IMAGE');
   });
+
+  it('POST /api/vision/correct validates request body', async () => {
+    process.env.AUTH_MODE = 'test';
+    const mod = await import('../src/app.js');
+    const a = mod.createApp();
+
+    // Missing request_id
+    const r1 = await request(a)
+      .post('/api/vision/correct')
+      .set('Authorization', 'Bearer test-token')
+      .send({ corrected_tiles: ['C1', 'C2'], photo_consent: false });
+    expect(r1.status).toBe(400);
+    expect(r1.body.code).toBe('BAD_REQUEST');
+
+    // Bad request_id format
+    const r2 = await request(a)
+      .post('/api/vision/correct')
+      .set('Authorization', 'Bearer test-token')
+      .send({ request_id: 'not-a-req-uuid', corrected_tiles: ['C1'], photo_consent: true });
+    expect(r2.status).toBe(400);
+
+    // Empty corrected_tiles
+    const r3 = await request(a)
+      .post('/api/vision/correct')
+      .set('Authorization', 'Bearer test-token')
+      .send({ request_id: 'req_test', corrected_tiles: [], photo_consent: false });
+    expect(r3.status).toBe(400);
+
+    // photo_consent not a boolean
+    const r4 = await request(a)
+      .post('/api/vision/correct')
+      .set('Authorization', 'Bearer test-token')
+      .send({ request_id: 'req_test', corrected_tiles: ['C1'], photo_consent: 'yes' });
+    expect(r4.status).toBe(400);
+
+    // Too many tiles
+    const r5 = await request(a)
+      .post('/api/vision/correct')
+      .set('Authorization', 'Bearer test-token')
+      .send({ request_id: 'req_test', corrected_tiles: Array(20).fill('C1'), photo_consent: false });
+    expect(r5.status).toBe(400);
+  });
+
+  it('diffTiles: counts extras as wrong, missing as wrong, common as correct', async () => {
+    process.env.AUTH_MODE = 'test';
+    const { diffTiles } = await import('../src/services/corrections.js');
+
+    // Helper: deep-equal regardless of order. Set iteration order is not
+    // guaranteed; the function returns the unique tile names, not multiset.
+    const sorted = (xs: string[]) => [...xs].sort();
+    const eq = (a: string[], b: string[]) => {
+      expect(sorted(a)).toEqual(sorted(b));
+    };
+
+    // AI predicted 3 tiles, corrected has 3 — but 1 different (W4↔W1 confusion).
+    // Both wrong tiles appear in the diff (deduped).
+    eq(diffTiles(['W1', 'W2', 'W3'], ['W1', 'W2', 'W4']), ['W3', 'W4']);
+
+    // AI predicted [W1, W2], corrected [W1, W1]. Predicted extra: W2.
+    // Corrected extra: W1. Both are wrong.
+    eq(diffTiles(['W1', 'W2'], ['W1', 'W1']), ['W1', 'W2']);
+
+    // Same tiles both directions = empty diff
+    expect(diffTiles(['C1', 'C2', 'C3'], ['C1', 'C2', 'C3'])).toEqual([]);
+
+    // All wrong (pred + corrected share nothing)
+    eq(diffTiles(['W1'], ['C1']), ['W1', 'C1']);
+
+    // Edge case: empty predictions (detector found nothing — user corrects
+    // with the right tiles). All corrected tiles should be in the diff.
+    eq(diffTiles([], ['C1', 'C2']), ['C1', 'C2']);
+  });
 });
 
 describe('localVision provider 422 IMAGE_UNCLEAR propagation', () => {

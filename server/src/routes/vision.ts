@@ -32,8 +32,15 @@ import { requireAuth } from '../auth/middleware.js';
 import { ApiError } from '../errors.js';
 import { config } from '../config.js';
 import { normalizeUpload } from '../services/imagePipeline.js';
+import { buildVisionCallRecord, hashImage } from '../services/visionTelemetry.js';
+import { recordCorrection, diffTiles } from '../services/corrections.js';
 import type { VisionProvider } from '../providers/visionProvider.js';
-import type { MahjongVisionResult, VisionAnalyzeResponse } from '../types.js';
+import type {
+  MahjongVisionResult,
+  VisionAnalyzeResponse,
+  VisionCorrectRequest,
+  VisionCorrectResponse,
+} from '../types.js';
 
 export interface VisionRouterDeps {
   /** Selected provider (stub or minimax). Boot-time decision. */
@@ -114,9 +121,24 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
         console.error('[vision] quota decrement failed', e);
       });
 
+      // Fire-and-forget telemetry. Logs the prediction (image_hash +
+      // tiles + provider + user) for the next model retrain dataset.
+      // NEVER awaited in the response path; never throws to caller.
+      const requestId = `req_${randomUUID()}`;
+      void buildVisionCallRecord({
+        uid,
+        imageBytes: normalized.bytes,
+        result,
+        provider: deps.provider.name,
+        requestId,
+        // Width/height not known here (provider already consumed the bytes);
+        // leave undefined; downstream dataset prep can read dimensions from
+        // the original photo in Storage if the user opted in to share it.
+      });
+
       const remaining = Math.max(0, ent.remainingAiUses - 1);
       const response: VisionAnalyzeResponse = {
-        requestId: `req_${randomUUID()}`,
+        requestId,
         provider: deps.provider.name,
         result,
         usage: { remainingAiUses: remaining },
@@ -124,6 +146,100 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       res.status(200).json(response);
 
       await decrement;
+    } catch (e) {
+      next(e);
+    }
+  });
+
+  /**
+   * POST /api/vision/correct — record the player's correction to a previous
+   * AI prediction. Premium-gated (free users shouldn't waste our correction
+   * quota on uncalibrated data).
+   *
+   * Body: { request_id, corrected_tiles, note?, photo_consent }
+   * Response: { request_id, diff_count, message }
+   *
+   * Side effects:
+   * - Looks up the original vision_calls doc by request_id to get the
+   *   predicted_tiles + image_hash. (If the original call has been pruned
+   *   we accept the write anyway; the corrected_tiles are still useful.)
+   * - Writes a vision_corrections doc linking prediction → ground truth.
+   */
+  router.post('/vision/correct', async (req, res, next) => {
+    try {
+      if (!req.auth) {
+        throw new ApiError('UNAUTHENTICATED', 'requireAuth did not populate req.auth');
+      }
+      const uid = req.auth.uid;
+
+      // Premium gate — free users don't have an AI call history to correct.
+      const ent = await deps.isPremium(uid);
+      if (!ent.isPremium) {
+        throw new ApiError('AI_PREMIUM_REQUIRED', '校正 AI 識別結果需要 PRO 會員');
+      }
+
+      const body = req.body as Partial<VisionCorrectRequest>;
+      if (!body || typeof body.request_id !== 'string' || !body.request_id.startsWith('req_')) {
+        throw new ApiError('BAD_REQUEST', 'request_id required (must be a req_ UUID from /vision/analyze)');
+      }
+      if (!Array.isArray(body.corrected_tiles) || body.corrected_tiles.length === 0) {
+        throw new ApiError('BAD_REQUEST', 'corrected_tiles must be a non-empty array of tile names');
+      }
+      if (body.corrected_tiles.length > 14) {
+        throw new ApiError('BAD_REQUEST', 'corrected_tiles cannot exceed 14 (max hand size + 1)');
+      }
+      if (typeof body.photo_consent !== 'boolean') {
+        throw new ApiError('BAD_REQUEST', 'photo_consent must be a boolean');
+      }
+
+      // Look up the original call so we can compute diff + carry over image_hash.
+      let predictedTiles: string[] = [];
+      let imageHash = '';
+      try {
+        const { firestore } = (await import('../firebase.js')).getFirebase();
+        const snap = await firestore
+          .collection('vision_calls')
+          .where('request_id', '==', body.request_id)
+          .where('uid', '==', uid)
+          .limit(1)
+          .get();
+        if (!snap.empty) {
+          const doc = snap.docs[0].data();
+          predictedTiles = doc.predicted_tiles ?? [];
+          imageHash = doc.image_hash ?? '';
+        }
+      } catch (e) {
+        // Firestore lookup failure is non-fatal; we still record the correction.
+        // eslint-disable-next-line no-console
+        console.warn('[vision/correct] lookup failed (non-fatal):', e instanceof Error ? e.message : e);
+      }
+
+      // If we can't find the original call (different account, pruned, etc.),
+      // we still accept the write — but the diff will be empty and the
+      // ground-truth tiles are still valuable as fresh data.
+      const wrongTiles = predictedTiles.length > 0
+        ? diffTiles(predictedTiles, body.corrected_tiles)
+        : [];
+
+      void recordCorrection({
+        uid,
+        request_id: body.request_id,
+        image_hash: imageHash,
+        predicted_tiles: predictedTiles,
+        corrected_tiles: body.corrected_tiles,
+        wrong_tiles: wrongTiles,
+        note: body.note,
+        photo_consent: body.photo_consent,
+      });
+
+      const response: VisionCorrectResponse = {
+        request_id: body.request_id,
+        diff_count: wrongTiles.length,
+        message: wrongTiles.length > 0
+          ? `已記錄 ${wrongTiles.length} 個錯誤識別。多謝你幫助 AI 學習！`
+          : 'AI 識別完全正確。感謝確認！',
+      };
+      res.status(200).json(response);
     } catch (e) {
       next(e);
     }
