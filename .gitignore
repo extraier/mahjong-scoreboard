@@ -90,3 +90,7 @@ server/data/real-tiles-v10-real-only/
 server/data/standing-tiles-2026-09-19/
 server/data/yolo-standing-2026-09-19/
 server/data/haselab-yolo-finetune/
+server/data/real-tiles-v12-raesakace/
+
+# HuggingFace cache (model weights downloaded for training)
+server/.cache/
