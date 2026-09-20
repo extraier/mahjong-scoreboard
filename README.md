@@ -39,6 +39,72 @@ AI 自動識別麻雀牌面、本地計番、Google Play 訂閱、AdMob banner�
 (or `@capacitor-community/google-play-billing`) 連去 real Google Play。
 **Phase 4** 會接入 `@capacitor-community/admob`。
 
+## Backend & Data Pipeline (Phase 1 dev)
+
+Phase 1 嘅 real backend 跑喺你部 Mac，**唔會 deploy 上 Vercel**。
+Vercel 部署只係 serve `dist/` (frontend bundle)，冇 Node API server。
+Capacitor Android app (production target) 透過 local network 訪問你部 Mac 嘅 Node server。
+
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│ Your Mac (dev)                                                            │
+│                                                                            │
+│   ┌──────── Node server :8788 ──────┐    ┌── FastAPI :8789 ──┐            │
+│   │  /api/me/entitlements           │    │  /analyze_json    │            │
+│   │  /api/vision/analyze  ──────────┼───▶│  (ViT v5+ensemble)│            │
+│   │  /api/vision/correct            │    │                   │            │
+│   │   └─▶ writes vision_calls       │    └───────────────────┘            │
+│   │   └─▶ writes vision_corrections │                                     │
+│   └──────────────┬──────────────────┘                                     │
+│                  │                                                        │
+└──────────────────┼────────────────────────────────────────────────────────┘
+                   │
+                   ▼
+        ┌──────────────────────────────┐
+        │  Firebase: savetheday-2377a  │  (dev-only, Phase 2 會轉去專屬 project)
+        │  /vision_calls              │
+        │  /vision_corrections        │
+        └──────────────────────────────┘
+```
+
+### Run the full stack
+
+```bash
+# Tab 1: vision server (Python)
+cd ~/mahjong-scoreboard/server
+LOCAL_VISION_MODEL_DIR=../models/mahjong-vision-finetuned-v5 \
+LOCAL_VISION_DETECTOR=ensemble \
+.mlvenv/bin/python scripts/local_vision_server.py --port 8789
+
+# Tab 2: Node API server
+cd ~/mahjong-scoreboard/server
+AUTH_MODE=test \
+FREE_PREMIUM_TESTING_UIDS=test-user,admin \
+FIREBASE_PROJECT_ID=savetheday-2377a \
+FIREBASE_SERVICE_ACCOUNT_JSON=$(base64 -i ~/.hermes/secrets/savetheday-firebase-sa.json | tr -d '\n') \
+LOG_LEVEL=info \
+node --import file://$(pwd)/node_modules/tsx/dist/loader.mjs src/index.ts
+```
+
+### Smoke test (one-liner)
+
+`scripts/smoke.sh` 會 check 5 個 endpoints 並 print PASS/FAIL：
+
+```bash
+./scripts/smoke.sh
+# 5 passed, 0 failed
+```
+
+CI 用得著 (verify deploy 後冇 break)，亦方便 "我啱啱係咪整爛咗個 dev stack"。
+
+### 數據流向
+
+每次 `/api/vision/analyze` 成功：
+1. AI 識別 → `vision_calls` doc (`uid`, `image_hash`, `predicted_tiles`, `confidence`, `provider`)
+2. 用戶撳「識別有誤」→ `/api/vision/correct` → lookup 返 `vision_calls` → 計 diff → `vision_corrections` doc (`predicted_tiles`, `corrected_tiles`, `wrong_tiles`, `photo_consent`, 同 `image_hash`)
+
+兩個 collection 透過 `image_hash` 連埋。Phase 2 嘅 model retrain 會用呢啲數據做 ground truth。
+
 ## Quick start (Phase 1 dev)
 
 ```bash
