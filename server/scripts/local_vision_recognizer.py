@@ -188,6 +188,176 @@ def detect_sliding_window(image_bgr, stride_ratio=0.6):
     return boxes
 
 
+class ImageQualityError(Exception):
+    """Raised when an uploaded image is too low-resolution / blurry / dark to
+    recognize reliably.
+
+    The error message is user-facing (will be surfaced to the player) and
+    tells them how to retake the photo.
+    """
+
+    def __init__(self, code: str, message: str, retry_hint: str, details: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.retry_hint = retry_hint
+        self.details = details or {}
+
+    def to_dict(self) -> dict:
+        return {
+            'status': 'rejected',
+            'error_code': self.code,
+            'error': self.message,
+            'retry_hint': self.retry_hint,
+            **self.details,
+        }
+
+
+# Quality thresholds. Tuned to reject photos that the v5 ViT cannot
+# recognize reliably (we observed confidence collapsing below 0.3 on
+# blurry / too-small images, which causes the systematic errors we've
+# been chasing). Generous enough to accept the existing GT images AND
+# the test fixtures (mixed-melded 600x211, dduiduhu 598x190).
+MIN_WIDTH = 480           # < 480px wide → too few pixels per tile
+MIN_HEIGHT = 180          # < 180px tall → too few pixels per tile
+MIN_MEGAPIXELS = 0.10     # < 0.10MP (e.g. 500x200) → too small for 13 tiles
+MIN_FILE_SIZE = 5_000     # < 5KB → likely empty or corrupt JPEG
+MAX_FILE_SIZE = 25_000_000  # 25MB safety cap
+MIN_LAPLACIAN_VAR = 80.0  # blur threshold — below this the photo is too soft
+MIN_AVG_BRIGHTNESS = 35   # 0-255; below this → too dark to read tile faces
+MAX_AVG_BRIGHTNESS = 235  # above this → blown-out / overexposed
+
+
+def validate_image_quality(image_bgr: np.ndarray,
+                           file_size: int | None = None,
+                           filename: str | None = None) -> tuple[int, int]:
+    """Validate an image meets minimum quality requirements.
+
+    Returns (orig_w, orig_h) on success.
+    Raises ImageQualityError on any quality failure, with a user-facing
+    message and retry hint.
+
+    Checks (in order):
+      1. Image is non-empty / decodable (caller does this)
+      2. Resolution: width ≥ MIN_WIDTH, height ≥ MIN_HEIGHT
+      3. Total megapixels ≥ MIN_MEGAPIXELS
+      4. (Optional) file size between MIN_FILE_SIZE and MAX_FILE_SIZE
+      5. Blur: Laplacian variance ≥ MIN_LAPLACIAN_VAR
+      6. Brightness: mean pixel value in [MIN_AVG_BRIGHTNESS, MAX_AVG_BRIGHTNESS]
+    """
+    orig_h, orig_w = image_bgr.shape[:2]
+    mp = (orig_w * orig_h) / 1_000_000.0
+
+    # Resolution checks
+    if orig_w < MIN_WIDTH or orig_h < MIN_HEIGHT:
+        raise ImageQualityError(
+            code='resolution_too_low',
+            message=f'Image too small ({orig_w}×{orig_h}).',
+            retry_hint=(
+                f'Retake the photo with at least {MIN_WIDTH}×{MIN_HEIGHT} resolution. '
+                'Hold the phone steady, fill the frame with your hand, and avoid '
+                'zooming in too much — the AI needs to see all 13 tiles clearly.'
+            ),
+            details={
+                'width': orig_w, 'height': orig_h,
+                'min_width': MIN_WIDTH, 'min_height': MIN_HEIGHT,
+                'megapixels': round(mp, 3),
+                'min_megapixels': MIN_MEGAPIXELS,
+            },
+        )
+
+    if mp < MIN_MEGAPIXELS:
+        raise ImageQualityError(
+            code='megapixels_too_low',
+            message=f'Image too small ({mp:.2f} MP).',
+            retry_hint=(
+                f'Retake the photo. We need at least {MIN_MEGAPIXELS:.2f} megapixels '
+                f'(≈{MIN_WIDTH}×{MIN_HEIGHT}). Avoid digital zoom — move the phone '
+                'closer to your hand instead.'
+            ),
+            details={
+                'width': orig_w, 'height': orig_h,
+                'megapixels': round(mp, 3),
+                'min_megapixels': MIN_MEGAPIXELS,
+            },
+        )
+
+    # File size sanity check (caller may not always provide this)
+    if file_size is not None:
+        if file_size < MIN_FILE_SIZE:
+            raise ImageQualityError(
+                code='file_too_small',
+                message=f'Image file too small ({file_size / 1000:.1f} KB).',
+                retry_hint='The photo may be corrupt. Retake and upload again.',
+                details={
+                    'file_size_bytes': file_size,
+                    'min_file_size_bytes': MIN_FILE_SIZE,
+                },
+            )
+        if file_size > MAX_FILE_SIZE:
+            raise ImageQualityError(
+                code='file_too_large',
+                message=f'Image file too large ({file_size / 1_000_000:.1f} MB).',
+                retry_hint=(
+                    'Compress the image or use a smaller resolution. '
+                    f'Maximum allowed is {MAX_FILE_SIZE // 1_000_000} MB.'
+                ),
+                details={
+                    'file_size_bytes': file_size,
+                    'max_file_size_bytes': MAX_FILE_SIZE,
+                },
+            )
+
+    # Blur detection (Laplacian variance)
+    gray = cv2.cvtColor(image_bgr, cv2.COLOR_BGR2GRAY)
+    lap_var = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if lap_var < MIN_LAPLACIAN_VAR:
+        raise ImageQualityError(
+            code='image_too_blurry',
+            message='Photo is too blurry to read the tiles.',
+            retry_hint=(
+                'Hold the phone steady with both hands, tap to focus on the tiles, '
+                'and make sure there is enough light. Avoid moving the phone while '
+                'the shutter is open. If the photo is dark, turn on more lights.'
+            ),
+            details={
+                'laplacian_variance': round(lap_var, 2),
+                'min_laplacian_variance': MIN_LAPLACIAN_VAR,
+            },
+        )
+
+    # Brightness check (mean of grayscale)
+    avg_brightness = float(gray.mean())
+    if avg_brightness < MIN_AVG_BRIGHTNESS:
+        raise ImageQualityError(
+            code='image_too_dark',
+            message='Photo is too dark to read the tiles.',
+            retry_hint=(
+                'Turn on more lights or use flash. Avoid shadows falling on the tiles. '
+                'The AI needs to clearly see the markings on each tile face.'
+            ),
+            details={
+                'avg_brightness': round(avg_brightness, 2),
+                'min_brightness': MIN_AVG_BRIGHTNESS,
+            },
+        )
+    if avg_brightness > MAX_AVG_BRIGHTNESS:
+        raise ImageQualityError(
+            code='image_too_bright',
+            message='Photo is overexposed / too bright.',
+            retry_hint=(
+                'Move away from direct sunlight or bright lamps. Avoid glare on the tiles. '
+                'Try again with softer, even lighting.'
+            ),
+            details={
+                'avg_brightness': round(avg_brightness, 2),
+                'max_brightness': MAX_AVG_BRIGHTNESS,
+            },
+        )
+
+    return orig_w, orig_h
+
+
 class LocalVisionService:
     """Singleton wrapper around TileRecognizer with hand-photo pipeline.
 
@@ -212,9 +382,26 @@ class LocalVisionService:
         print(f'[local_vision] loading TileRecognizer on {self.device}...', flush=True)
         t0 = time.time()
         self.recognizer = TileRecognizer(device=self.device)
+
+        # Load logit bias correction (to counter class imbalance)
+        # Computed from 8 complete-set photos: predicted / expected_per_set
+        # Subtracted from logits at inference to compensate for over-prediction
+        # bias toward certain classes (F7, S1, W5, F2, etc.).
+        bias_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                                'data', 'logit_bias.json')
+        if os.path.exists(bias_path):
+            import json
+            with open(bias_path) as f:
+                bias_data = json.load(f)
+            self.logit_bias = torch.tensor(bias_data['tensor'], dtype=torch.float32)
+            print(f'[local_vision] loaded logit bias correction '
+                  f'(max abs={self.logit_bias.abs().max().item():.3f})')
+        else:
+            self.logit_bias = None
+
         print(f'[local_vision] model loaded in {(time.time()-t0)*1000:.0f}ms, detector={self.detector}', flush=True)
 
-    def classify_hand(self, image_bgr) -> dict:
+    def classify_hand(self, image_bgr, file_size: int | None = None) -> dict:
         """Run full pipeline: detect tiles -> classify each -> return JSON-able dict.
 
         Returns image width/height so the caller can apply adaptive confidence
@@ -224,7 +411,16 @@ class LocalVisionService:
         detector (OpenCV findContours) can find tile boundaries. The
         classifier still operates on the upscaled crop area, scaled to
         224×224 as before.
+
+        Validates image quality (resolution / blur / brightness) BEFORE any
+        heavy processing. Raises ImageQualityError on bad input — callers
+        (FastAPI endpoints) catch this and return a structured retry response.
         """
+        # Quality gate: reject blurry / too-small / too-dark photos before
+        # wasting model inference on them. Tune thresholds via the module-level
+        # constants (MIN_WIDTH, MIN_LAPLACIAN_VAR, etc.).
+        validate_image_quality(image_bgr, file_size=file_size)
+
         orig_h, orig_w = image_bgr.shape[:2]
         h, w = orig_h, orig_w
         upscale_applied = False
@@ -322,7 +518,7 @@ class LocalVisionService:
         for i, (x, y, bw, bh) in enumerate(boxes):
             crop_bgr = image_bgr[y:y+bh, x:x+bw]
             crop_pil = Image.fromarray(cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2RGB)).resize((224, 224))
-            label, conf = self.recognizer.classify_crop(crop_pil)
+            label, conf = self.recognizer.classify_crop(crop_pil, logit_bias=self.logit_bias)
             chosen_label = label
             chosen_conf = conf
             if self.detector == 'ensemble' and yolo_labels_per_box is not None:
@@ -340,7 +536,7 @@ class LocalVisionService:
                 warped = haselab_warped.get((x, y, bw, bh))
                 if warped is not None:
                     crop_pil = Image.fromarray(cv2.cvtColor(warped, cv2.COLOR_BGR2RGB))
-                    label, conf = self.recognizer.classify_crop(crop_pil)
+                    label, conf = self.recognizer.classify_crop(crop_pil, logit_bias=self.logit_bias)
                     chosen_label = label
                     chosen_conf = conf
             if chosen_conf < self.min_conf or chosen_label is None:

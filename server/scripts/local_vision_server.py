@@ -30,7 +30,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).parent))
-from local_vision_recognizer import get_service  # noqa: E402
+from local_vision_recognizer import get_service, ImageQualityError  # noqa: E402
 
 import cv2
 import numpy as np
@@ -78,7 +78,12 @@ def ready():
 
 @app.post('/analyze')
 async def analyze(image: UploadFile = File(...)):
-    """Accept multipart/form-data with 'image' field. Returns tile list + bboxes."""
+    """Accept multipart/form-data with 'image' field. Returns tile list + bboxes.
+
+    Validates image quality (resolution / blur / brightness). Returns a
+    structured 400 response with retry instructions if the image is too
+    low-quality to recognize reliably.
+    """
     contents = await image.read()
     if len(contents) == 0:
         raise HTTPException(status_code=400, detail='empty image')
@@ -89,7 +94,15 @@ async def analyze(image: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail='cv2 failed to decode image')
 
     svc = get_service()
-    return svc.classify_hand(image_bgr)
+    try:
+        return svc.classify_hand(image_bgr, file_size=len(contents))
+    except ImageQualityError as e:
+        # 422 Unprocessable Entity: image is valid but unrecognizable.
+        # The Node side reads error_code + retry_hint to show a useful message.
+        return JSONResponse(
+            status_code=422,
+            content=e.to_dict(),
+        )
 
 
 class AnalyzeJSON(BaseModel):
@@ -98,7 +111,11 @@ class AnalyzeJSON(BaseModel):
 
 @app.post('/analyze_json')
 async def analyze_json(body: AnalyzeJSON):
-    """Accept { image_b64: "..." } JSON body (matches npm Buffer.toString('base64'))."""
+    """Accept { image_b64: "..." } JSON body (matches npm Buffer.toString('base64')).
+
+    Same quality validation as /analyze — returns 422 with retry instructions
+    for low-quality images.
+    """
     import base64
     try:
         raw = base64.b64decode(body.image_b64)
@@ -110,7 +127,13 @@ async def analyze_json(body: AnalyzeJSON):
         raise HTTPException(status_code=400, detail='cv2 failed to decode image')
 
     svc = get_service()
-    return svc.classify_hand(image_bgr)
+    try:
+        return svc.classify_hand(image_bgr, file_size=len(raw))
+    except ImageQualityError as e:
+        return JSONResponse(
+            status_code=422,
+            content=e.to_dict(),
+        )
 
 
 def main():

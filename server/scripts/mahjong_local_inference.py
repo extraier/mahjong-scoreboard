@@ -58,13 +58,19 @@ class TileRecognizer:
             self.id2ours[int(idx_str)] = RIICHI_TO_OURS.get(riichi_label)
         print(f'[recognizer] model loaded on {self.device}, 34 classes, id2ours={len(self.id2ours)}')
 
-    def classify_crop(self, crop_pil):
-        """Run ViT on a single crop. Returns (our_label, confidence)."""
+    def classify_crop(self, crop_pil, logit_bias=None):
+        """Run ViT on a single crop. Returns (our_label, confidence).
+
+        logit_bias: optional tensor of shape [num_classes] added to logits
+            before argmax. Used to compensate for class imbalance bias.
+        """
         inputs = self.processor(images=crop_pil, return_tensors='pt').to(self.device)
         with torch.no_grad():
             outputs = self.model(**inputs)
-        logits = outputs.logits
-        probs = torch.nn.functional.softmax(logits, dim=1)[0]
+        logits = outputs.logits[0]  # shape [num_classes]
+        if logit_bias is not None:
+            logits = logits + logit_bias.to(logits.device)
+        probs = torch.nn.functional.softmax(logits, dim=0)
         top_id = int(probs.argmax())
         conf = float(probs[top_id])
         return self.id2ours[top_id], conf
