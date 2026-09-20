@@ -15,7 +15,7 @@
  */
 
 import { useEffect, useRef, useState } from 'react';
-import { analyzeMahjongImage } from '../lib/visionClient';
+import { analyzeMahjongImage, correctMahjongVision } from '../lib/visionClient';
 import type {
   ApiError,
   GameMode,
@@ -40,7 +40,7 @@ type Phase =
   | { kind: 'preview'; file: File; previewUrl: string }
   | { kind: 'analyzing'; file: File; previewUrl: string }
   | { kind: 'error'; file: File; previewUrl: string; error: ApiError }
-  | { kind: 'result'; file: File; previewUrl: string; result: MahjongVisionResult };
+  | { kind: 'result'; file: File; previewUrl: string; result: MahjongVisionResult; requestId: string };
 
 export function AiCameraPanel({
   gameMode,
@@ -75,7 +75,7 @@ export function AiCameraPanel({
         roundWind,
         seatWind,
       });
-      setPhase({ ...phase, kind: 'result', result: response.result });
+      setPhase({ ...phase, kind: 'result', result: response.result, requestId: response.requestId });
     } catch (e) {
       const err = e as ApiError;
       setPhase({ ...phase, kind: 'error', error: err });
@@ -183,6 +183,7 @@ export function AiCameraPanel({
       {phase.kind === 'result' && (
         <VisionResultReview
           result={phase.result}
+          requestId={phase.requestId}
           onConfirm={(tiles, flowers) => {
             onResultConfirmed(tiles, flowers);
             reset();
@@ -196,16 +197,23 @@ export function AiCameraPanel({
 
 function VisionResultReview({
   result,
+  requestId,
   onConfirm,
   onRetake,
 }: {
   result: MahjongVisionResult;
+  requestId: string;
   onConfirm: (tiles: string[], flowers: string[]) => void;
   onRetake: () => void;
 }) {
   const [tiles, setTiles] = useState<string[]>(result.tiles);
   const [flowers, setFlowers] = useState<string[]>(result.flowers);
   const [editingIdx, setEditingIdx] = useState<number | null>(null);
+  // 'reportWrong' inline modal state. Empty = closed.
+  const [showReport, setShowReport] = useState(false);
+  const [reportState, setReportState] = useState<
+    { kind: 'idle' } | { kind: 'sending' } | { kind: 'sent'; diff_count: number } | { kind: 'error'; message: string }
+  >({ kind: 'idle' });
 
   // Confidence-based UI cue: < 0.7 → warn the user before confirming
   const lowConfidence = result.confidence < 0.7;
@@ -267,22 +275,109 @@ function VisionResultReview({
         </div>
       )}
 
-      <div className="flex gap-2">
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onConfirm(tiles, flowers)}
+            className="flex-1 py-2 bg-emerald-600 text-white rounded-xl font-black text-sm"
+          >
+            ✅ 確認套用
+          </button>
+          <button
+            type="button"
+            onClick={onRetake}
+            className="px-3 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm"
+          >
+            重拍
+          </button>
+        </div>
         <button
           type="button"
-          onClick={() => onConfirm(tiles, flowers)}
-          className="flex-1 py-2 bg-emerald-600 text-white rounded-xl font-black text-sm"
+          onClick={() => {
+            setShowReport(true);
+            setReportState({ kind: 'idle' });
+          }}
+          className="w-full py-2 bg-amber-50 text-amber-900 border border-amber-300 rounded-xl font-bold text-xs"
         >
-          ✅ 確認套用
-        </button>
-        <button
-          type="button"
-          onClick={onRetake}
-          className="px-3 py-2 bg-slate-200 text-slate-700 rounded-xl font-bold text-sm"
-        >
-          重拍
+          ⚠️ 識別有誤？我要校正 AI 結果
         </button>
       </div>
+
+      {showReport && (
+        <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 space-y-2 text-xs">
+          <p className="font-black text-amber-900">
+            📝 校正 AI 識別結果
+          </p>
+          <p className="text-amber-800">
+            請確認或修改下方嘅牌。改好之後按「送出校正」，錯誤識別會用嚟訓練下一個 AI 模型。多謝你！
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {tiles.map((t, i) => (
+              <UncertainTileChip
+                key={`report-${i}-${t}`}
+                tile={t}
+                isEditing={editingIdx === i}
+                onEditClick={() => setEditingIdx(i)}
+                onEditChange={(v) => {
+                  const next = [...tiles];
+                  next[i] = v.toUpperCase();
+                  setTiles(next);
+                  setEditingIdx(null);
+                }}
+              />
+            ))}
+          </div>
+
+          {reportState.kind === 'sent' && (
+            <div className="bg-emerald-100 border border-emerald-300 rounded-lg p-2 text-emerald-900">
+              ✅ {reportState.diff_count > 0
+                ? `已記錄 ${reportState.diff_count} 個錯誤識別。多謝你幫助 AI 學習！`
+                : '你確認 AI 識別完全正確。感謝你嘅確認！'}
+            </div>
+          )}
+          {reportState.kind === 'error' && (
+            <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-red-900">
+              ⚠️ {reportState.message}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button
+              type="button"
+              disabled={reportState.kind === 'sending'}
+              onClick={async () => {
+                setReportState({ kind: 'sending' });
+                try {
+                  const resp = await correctMahjongVision({
+                    request_id: requestId,
+                    corrected_tiles: tiles,
+                    photo_consent: false,
+                  });
+                  setReportState({ kind: 'sent', diff_count: resp.diff_count });
+                } catch (e) {
+                  const err = e as ApiError;
+                  const msg =
+                    err.code === 'AI_PREMIUM_REQUIRED'
+                      ? '校正功能需要 PRO 會員。'
+                      : err.message || '送出失敗，請稍後再試。';
+                  setReportState({ kind: 'error', message: msg });
+                }
+              }}
+              className="flex-1 py-2 bg-amber-600 text-white rounded-xl font-black text-xs disabled:bg-amber-300"
+            >
+              {reportState.kind === 'sending' ? '送出中…' : '📤 送出校正'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowReport(false)}
+              className="px-3 py-2 bg-white border border-amber-300 text-amber-900 rounded-xl font-bold text-xs"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

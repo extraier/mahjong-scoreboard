@@ -101,6 +101,28 @@ export interface VisionAnalyzeResponse {
   };
 }
 
+/**
+ * Request body for POST /api/vision/correct — the player submits the
+ * ground-truth tile list for a previous AI prediction. Used to collect
+ * training data for the next model retrain.
+ */
+export interface VisionCorrectRequest {
+  /** requestId returned by /api/vision/analyze. */
+  request_id: string;
+  /** Ground-truth tiles (what the player says they actually had). */
+  corrected_tiles: string[];
+  /** Optional free-text note (e.g. "left tile was partially occluded"). */
+  note?: string;
+  /** Whether the user consents to using the original photo for retraining. */
+  photo_consent: boolean;
+}
+
+export interface VisionCorrectResponse {
+  request_id: string;
+  diff_count: number;
+  message: string;
+}
+
 // ============================================================================
 // Request payload for vision (used by visionClient)
 // ============================================================================

@@ -19,6 +19,8 @@ import type {
   MahjongVisionResult,
   VisionAnalyzeRequest,
   VisionAnalyzeResponse,
+  VisionCorrectRequest,
+  VisionCorrectResponse,
 } from '../types/api';
 
 export async function analyzeMahjongImage(
@@ -37,6 +39,29 @@ export async function analyzeMahjongImage(
     timeoutMs: 60_000,
   });
   if (r.ok === true) return (r as { ok: true; data: VisionAnalyzeResponse }).data;
+  const error = (r as { ok: false; error: ApiError }).error;
+  throw error;
+}
+
+/**
+ * Submit the player's correction to a previous AI prediction.
+ *
+ * Used by the "report wrong tile" button on the result review screen.
+ * Premium-only — free users hit 403 AI_PREMIUM_REQUIRED.
+ *
+ * Fire-and-forget at the call site: callers should not block the player's
+ * flow on this. The server-side write is also fire-and-forget to Firestore
+ * after validating the request body.
+ */
+export async function correctMahjongVision(
+  req: VisionCorrectRequest
+): Promise<VisionCorrectResponse> {
+  const r = await request<VisionCorrectResponse>('/api/vision/correct', {
+    method: 'POST',
+    body: req,
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (r.ok === true) return (r as { ok: true; data: VisionCorrectResponse }).data;
   const error = (r as { ok: false; error: ApiError }).error;
   throw error;
 }
