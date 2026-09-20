@@ -190,6 +190,85 @@ describe('POST /api/vision/analyze (5-step handler)', () => {
   });
 });
 
+describe('localVision provider 422 IMAGE_UNCLEAR propagation', () => {
+  let originalFetch: typeof fetch;
+
+  beforeEach(() => {
+    originalFetch = global.fetch;
+  });
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+  });
+
+  it('translates FastAPI 422 quality rejection to ApiError(IMAGE_UNCLEAR) with retry_hint', async () => {
+    // Mock the FastAPI server returning a structured quality rejection.
+    global.fetch = vi.fn(async () => {
+      return new Response(
+        JSON.stringify({
+          status: 'rejected',
+          error_code: 'image_too_blurry',
+          error: 'Photo is too blurry to read the tiles.',
+          retry_hint: 'Hold the phone steady with both hands, tap to focus.',
+          laplacian_variance: 12.3,
+          min_laplacian_variance: 80.0,
+        }),
+        { status: 422, headers: { 'Content-Type': 'application/json' } },
+      );
+    }) as typeof fetch;
+
+    process.env.LOCAL_VISION_HTTP_URL = 'http://localhost:8789';
+    const { createLocalVisionProvider } = await import('../src/providers/localVision.js');
+    const provider = createLocalVisionProvider();
+
+    let caught: unknown;
+    try {
+      await provider.analyze({
+        imageBytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+        imageMime: 'image/jpeg',
+        gameMode: 'HK',
+        roundWind: '東',
+        seatWind: '東',
+      });
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).toBeTruthy();
+    const err = caught as { code: string; message: string; details?: Record<string, unknown> };
+    expect(err.code).toBe('IMAGE_UNCLEAR');
+    expect(err.message).toContain('blurry');
+    expect(err.details?.error_code).toBe('image_too_blurry');
+    expect(err.details?.retry_hint).toContain('Hold the phone steady');
+    expect(err.details?.laplacian_variance).toBe(12.3);
+    expect(err.details?.min_laplacian_variance).toBe(80.0);
+  });
+
+  it('falls back to generic retry_hint when 422 body is not JSON', async () => {
+    global.fetch = vi.fn(async () => {
+      return new Response('not json', { status: 422 });
+    }) as typeof fetch;
+
+    process.env.LOCAL_VISION_HTTP_URL = 'http://localhost:8789';
+    const { createLocalVisionProvider } = await import('../src/providers/localVision.js');
+    const provider = createLocalVisionProvider();
+
+    await expect(
+      provider.analyze({
+        imageBytes: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]),
+        imageMime: 'image/jpeg',
+        gameMode: 'HK',
+        roundWind: '東',
+        seatWind: '東',
+      }),
+    ).rejects.toMatchObject({
+      code: 'IMAGE_UNCLEAR',
+      details: {
+        error_code: 'quality_rejected',
+      },
+    });
+  });
+});
+
 describe('imagePipeline', () => {
   it('sniffs valid PNG', async () => {
     const { normalizeRaw } = await import('../src/services/imagePipeline.js');

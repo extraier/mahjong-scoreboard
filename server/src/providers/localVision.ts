@@ -56,6 +56,15 @@ interface LocalVisionResponse {
   elapsed_classify_ms: number;
 }
 
+interface LocalVisionQualityError {
+  status: 'rejected';
+  error_code: string;
+  error: string;
+  retry_hint: string;
+  // Optional numeric details: width, height, laplacian_variance, etc.
+  [k: string]: unknown;
+}
+
 async function callHttp(
   input: VisionInput,
   timeoutMs: number,
@@ -81,6 +90,29 @@ async function callHttp(
     throw new ApiError('PROVIDER_UNAVAILABLE', `local-vision HTTP failed (${HTTP_URL}): ${msg}`);
   }
   clearTimeout(t);
+
+  // Quality rejection (HTTP 422): FastAPI rejected the photo as too blurry,
+  // too small, too dark, etc. Surface the structured retry_hint to the
+  // frontend as IMAGE_UNCLEAR so the player gets a clear "retake photo"
+  // message instead of a generic UPSTREAM error.
+  if (resp.status === 422) {
+    let body: LocalVisionQualityError | null = null;
+    try {
+      body = (await resp.json()) as LocalVisionQualityError;
+    } catch {
+      // Body wasn't JSON — fall back to a generic message.
+    }
+    throw new ApiError(
+      'IMAGE_UNCLEAR',
+      body?.error ?? '相片質素不符合要求',
+      {
+        error_code: body?.error_code ?? 'quality_rejected',
+        retry_hint: body?.retry_hint ?? '請重新拍攝相片。保持光線充足、相機穩定，並確保所有牌清晰可見。',
+        ...stripUnknown(body ?? {}),
+      },
+    );
+  }
+
   if (!resp.ok) {
     const text = await resp.text().catch(() => '');
     throw new ApiError('UPSTREAM', `local-vision HTTP ${resp.status}: ${text.slice(0, 200)}`);
@@ -92,6 +124,23 @@ async function callHttp(
     throw new ApiError('UPSTREAM', `local-vision response not JSON: ${e instanceof Error ? e.message : String(e)}`);
   }
   return normalizeToResult(payload, 'http', input.gameMode);
+}
+
+/**
+ * Pull numeric / debug fields out of the FastAPI quality-error body so we
+ * can pass them as `details` without nesting the whole payload under a
+ * redundant `error_code` key. Keeps `error_code` + `retry_hint` (string
+ * fields) for the UI, drops `status` (already encoded by HTTP 422).
+ */
+function stripUnknown(body: Partial<LocalVisionQualityError>): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(body)) {
+    if (k === 'status' || k === 'error_code' || k === 'retry_hint' || k === 'error') continue;
+    if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') {
+      out[k] = v;
+    }
+  }
+  return out;
 }
 
 function normalizeToResult(

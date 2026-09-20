@@ -72,21 +72,24 @@ const STATUS_TO_CODE: Record<number, ApiErrorCode> = {
 
 /**
  * Build an ApiError from a fetch Response.
- * Server is expected to return { code, message, ... } JSON; we trust the
+ * Server is expected to return { code, message, details? } JSON; we trust the
  * server's `code` field, but fall back to status-code mapping if absent.
  */
 async function errorFromResponse(r: Response): Promise<ApiError> {
-  let parsed: { code?: string; message?: string; meta?: Record<string, unknown> } = {};
+  let parsed: { code?: string; message?: string; details?: Record<string, unknown>; meta?: Record<string, unknown> } = {};
   try {
     parsed = await r.json();
   } catch {
     // Body wasn't JSON — keep parsed as {}.
   }
   const code = (parsed.code as ApiErrorCode) || STATUS_TO_CODE[r.status] || 'INTERNAL';
+  // Server sends `details` (per spec §6 / server/src/types.ts); some legacy
+  // paths may use `meta`. Prefer details, fall back to meta.
+  const extra = parsed.details ?? parsed.meta;
   return {
     code,
     message: parsed.message || defaultMessageFor(code, r.status),
-    meta: parsed.meta,
+    meta: extra,
     status: r.status,
   };
 }

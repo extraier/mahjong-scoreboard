@@ -13,6 +13,7 @@ export type ApiErrorCode =
   | 'QUOTA_EXCEEDED'
   | 'IMAGE_TOO_LARGE'
   | 'INVALID_IMAGE'
+  | 'IMAGE_UNCLEAR'   // 422 — quality validation rejected the photo (blurry / too small / dark / bright). Frontend should show retry_hint.
   | 'PROVIDER_DISABLED'
   | 'PROVIDER_UNAVAILABLE'
   | 'INTERNAL'

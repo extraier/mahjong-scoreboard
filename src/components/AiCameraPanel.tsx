@@ -153,6 +153,23 @@ export function AiCameraPanel({
               你嘅帳戶係免費會員。升級至 PRO 解鎖 AI 識別功能。
             </p>
           )}
+          {phase.error.code === 'IMAGE_UNCLEAR' && (
+            <div className="space-y-1.5">
+              <p className="text-red-800 text-xs font-bold">
+                📸 相片質素不符合要求
+              </p>
+              {phase.error.meta?.retry_hint && (
+                <p className="text-red-700 text-xs leading-relaxed">
+                  {String(phase.error.meta.retry_hint)}
+                </p>
+              )}
+              {phase.error.meta?.error_code && (
+                <p className="text-red-500 text-[10px] font-mono">
+                  原因: {String(phase.error.meta.error_code)}
+                </p>
+              )}
+            </div>
+          )}
           <button
             type="button"
             onClick={reset}
