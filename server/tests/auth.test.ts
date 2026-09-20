@@ -24,18 +24,20 @@ async function authOffApp(): Promise<Express> {
 }
 
 describe('requireAuth', () => {
-  it('AUTH_MODE=test → /api/me/entitlements returns 200 with stub', async () => {
+  it('/api/me/entitlements returns 200 with test-user (premium via FREE_PREMIUM_TESTING_UIDS)', async () => {
     process.env.AUTH_MODE = 'test';
     const { createApp } = await import('../src/app.js');
     const app = createApp();
     const res = await request(app).get('/api/me/entitlements');
     expect(res.status).toBe(200);
+    // test-user is in the default FREE_PREMIUM_TESTING_UIDS allowlist
+    // (set in vitest.config.ts) so it should report as premium.
     expect(res.body).toMatchObject({
-      isPremium: false,
-      adsEnabled: true,
-      canUseAi: false,
-      remainingAiUses: 0,
+      isPremium: true,
+      adsEnabled: false,
+      canUseAi: true,
     });
+    expect(res.body.remainingAiUses).toBeGreaterThan(0);
     expect(res.body.fetchedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 

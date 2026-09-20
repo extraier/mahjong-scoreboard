@@ -64,6 +64,20 @@ export interface Config {
     packageName: string | null;
     serviceAccountKey: string | null; // base64
   };
+
+  /**
+   * Free premium testing — for QA, internal testing, and free-tier promotions.
+   * Without going through Google Play, certain uids/emails get premium access
+   * to AI vision + corrections. List of uids (comma-separated) + email
+   * suffix patterns (comma-separated, e.g. "@comparetiger.com") are both
+   * honored.
+   */
+  freePremium: {
+    /** Firebase auth uids that should be auto-promoted to premium. */
+    testingUids: string[];
+    /** Email suffixes that always get premium (e.g. "@comparetiger.com"). */
+    testingEmailSuffixes: string[];
+  };
 }
 
 const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error'];
@@ -71,6 +85,11 @@ const VALID_LOG_LEVELS: readonly LogLevel[] = ['debug', 'info', 'warn', 'error']
 function num(s: string | undefined, fallback: number): number {
   const n = parseInt(s ?? '', 10);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function parseList(s: string | undefined): string[] {
+  if (!s) return [];
+  return s.split(',').map((x) => x.trim()).filter(Boolean);
 }
 
 function loadConfig(): Config {
@@ -120,6 +139,10 @@ function loadConfig(): Config {
     googlePlay: {
       packageName: gplayPkg,
       serviceAccountKey: gplayKey,
+    },
+    freePremium: {
+      testingUids: parseList(process.env.FREE_PREMIUM_TESTING_UIDS),
+      testingEmailSuffixes: parseList(process.env.FREE_PREMIUM_TESTING_EMAIL_SUFFIXES),
     },
     ollama: {
       baseUrl: process.env.OLLAMA_BASE_URL ?? 'http://localhost:11434',

@@ -17,6 +17,7 @@ import { createStubProvider } from './providers/stubProvider.js';
 import { createMinimaxProvider } from './providers/minimaxVision.js';
 import { createOllamaProvider } from './providers/ollamaVision.js';
 import { createLocalVisionProvider } from './providers/localVision.js';
+import { computeEntitlementSummary } from './services/entitlements.js';
 import type { VisionProvider } from './providers/visionProvider.js';
 
 function selectVisionProvider(): VisionProvider {
@@ -36,23 +37,25 @@ function selectVisionProvider(): VisionProvider {
 }
 
 /**
- * Stub entitlement reader. Replaced in commit 4 with
- * services/entitlements.computeEntitlements(uid).
+ * Entitlement reader backed by services/entitlements. Honors the
+ * FREE_PREMIUM_TESTING_UIDS + FREE_PREMIUM_TESTING_EMAIL_SUFFIXES env
+ * vars for beta testers / internal team members. Firestore-backed
+ * subscription state will replace the second branch in a later commit.
  */
-async function stubIsPremium(uid: string): Promise<{
-  isPremium: boolean;
-  canUseAi: boolean;
-  remainingAiUses: number;
-}> {
-  const isAdmin = uid === 'admin' || uid === 'test-user';
-  return {
-    isPremium: isAdmin,
-    canUseAi: isAdmin,
-    remainingAiUses: isAdmin ? 999 : 0,
+function makeIsPremiumClosure() {
+  return async (uid: string): Promise<{
+    isPremium: boolean;
+    canUseAi: boolean;
+    remainingAiUses: number;
+  }> => {
+    // Email is not visible to this closure (only uid is passed). The
+    // uid allowlist + the env-driven config still work. If a route
+    // needs the email too, refactor isPremium to take AuthContext.
+    return computeEntitlementSummary({ uid, email: undefined });
   };
 }
 
-/** Stub quota decrement. Replaced in commit 6. */
+/** Stub quota decrement. Replaced in commit 6 with Firestore counter. */
 async function stubDecrementQuota(_uid: string): Promise<void> {
   return;
 }
@@ -80,12 +83,13 @@ export function createApp(): Express {
   // Authenticated user-facing routes
   app.use('/api', meRouter);
 
-  // Vision route with deps wired (entitlement + quota use stubs;
-  // commit 4 + 6 replace the stubs with Firestore-backed implementations).
+  // Vision route with deps wired. Entitlement reads through the
+  // entitlements service (FREE_PREMIUM_TESTING_* env vars for beta
+  // testers; Firestore-backed subscriptions will replace later).
   const provider = selectVisionProvider();
   const visionRouter = createVisionRouter({
     provider,
-    isPremium: stubIsPremium,
+    isPremium: makeIsPremiumClosure(),
     decrementQuota: stubDecrementQuota,
   });
   app.use('/api', visionRouter);
