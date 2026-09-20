@@ -32,7 +32,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { ApiError } from '../errors.js';
 import { config } from '../config.js';
 import { normalizeUpload } from '../services/imagePipeline.js';
-import { buildVisionCallRecord, hashImage } from '../services/visionTelemetry.js';
+import { buildVisionCallRecord, logVisionCall, hashImage } from '../services/visionTelemetry.js';
 import { recordCorrection, diffTiles } from '../services/corrections.js';
 import type { VisionProvider } from '../providers/visionProvider.js';
 import type {
@@ -125,16 +125,18 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       // tiles + provider + user) for the next model retrain dataset.
       // NEVER awaited in the response path; never throws to caller.
       const requestId = `req_${randomUUID()}`;
-      void buildVisionCallRecord({
-        uid,
-        imageBytes: normalized.bytes,
-        result,
-        provider: deps.provider.name,
-        requestId,
-        // Width/height not known here (provider already consumed the bytes);
-        // leave undefined; downstream dataset prep can read dimensions from
-        // the original photo in Storage if the user opted in to share it.
-      });
+      void logVisionCall(
+        buildVisionCallRecord({
+          uid,
+          imageBytes: normalized.bytes,
+          result,
+          provider: deps.provider.name,
+          requestId,
+          // Width/height not known here (provider already consumed the bytes);
+          // leave undefined; downstream dataset prep can read dimensions from
+          // the original photo in Storage if the user opted in to share it.
+        }),
+      );
 
       const remaining = Math.max(0, ent.remainingAiUses - 1);
       const response: VisionAnalyzeResponse = {

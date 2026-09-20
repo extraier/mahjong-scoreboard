@@ -75,6 +75,10 @@ export function getFirebase(): FirebaseHandles {
   const auth = getAuth(app);
   const firestore = getFirestore(app);
 
+  // Allow `undefined` fields in documents so optional correction notes
+  // don't crash the write. Firestore rejects undefined by default.
+  firestore.settings({ ignoreUndefinedProperties: true });
+
   // Persistent cache handles for warm starts.
   _handles = { app, auth, firestore };
   return _handles;
