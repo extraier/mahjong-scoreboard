@@ -79,3 +79,14 @@ models/kaggle-mahjong/
 
 # Mobile hand photos (unlabeled, used as test images only)
 models/mahjong-mobile-hands/
+
+# Generated training datasets (rebuildable from source data + scripts)
+server/data/real-tiles-v5/
+server/data/real-tiles-v6/
+server/data/real-tiles-v7-combined/
+server/data/real-tiles-v7-mahjongreal/
+server/data/real-tiles-v8-ultralytics-samples/
+server/data/real-tiles-v10-real-only/
+server/data/standing-tiles-2026-09-19/
+server/data/yolo-standing-2026-09-19/
+server/data/haselab-yolo-finetune/
