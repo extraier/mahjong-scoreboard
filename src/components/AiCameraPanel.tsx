@@ -24,6 +24,7 @@ import type {
   SeatWind,
   UncertainTile,
 } from '../types/api';
+import { BottomSheet } from './BottomSheet';
 
 export interface AiCameraPanelProps {
   gameMode: GameMode;
@@ -304,14 +305,13 @@ function VisionResultReview({
         </button>
       </div>
 
-      {showReport && (
-        <div className="border border-amber-300 bg-amber-50 rounded-xl p-3 space-y-2 text-xs">
-          <p className="font-black text-amber-900">
-            📝 校正 AI 識別結果
-          </p>
-          <p className="text-amber-800">
-            請確認或修改下方嘅牌。改好之後按「送出校正」，錯誤識別會用嚟訓練下一個 AI 模型。多謝你！
-          </p>
+      <BottomSheet
+        open={showReport}
+        onClose={() => setShowReport(false)}
+        title="📝 校正 AI 識別結果"
+        description="請確認或修改下方嘅牌。改好之後按「送出校正」，錯誤識別會用嚟訓練下一個 AI 模型。多謝你！"
+      >
+        <div className="space-y-3">
           <div className="flex flex-wrap gap-1">
             {tiles.map((t, i) => (
               <UncertainTileChip
@@ -330,19 +330,19 @@ function VisionResultReview({
           </div>
 
           {reportState.kind === 'sent' && (
-            <div className="bg-emerald-100 border border-emerald-300 rounded-lg p-2 text-emerald-900">
+            <div className="bg-emerald-100 border border-emerald-300 rounded-lg p-2 text-emerald-900 text-sm">
               ✅ {reportState.diff_count > 0
                 ? `已記錄 ${reportState.diff_count} 個錯誤識別。多謝你幫助 AI 學習！`
                 : '你確認 AI 識別完全正確。感謝你嘅確認！'}
             </div>
           )}
           {reportState.kind === 'error' && (
-            <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-red-900">
+            <div className="bg-red-100 border border-red-300 rounded-lg p-2 text-red-900 text-sm">
               ⚠️ {reportState.message}
             </div>
           )}
 
-          <div className="flex gap-2">
+          <div className="flex gap-2 pt-2">
             <button
               type="button"
               disabled={reportState.kind === 'sending'}
@@ -364,20 +364,20 @@ function VisionResultReview({
                   setReportState({ kind: 'error', message: msg });
                 }
               }}
-              className="flex-1 py-2 bg-amber-600 text-white rounded-xl font-black text-xs disabled:bg-amber-300"
+              className="flex-1 py-3 bg-amber-600 text-white rounded-xl font-black text-sm disabled:bg-amber-300"
             >
               {reportState.kind === 'sending' ? '送出中…' : '📤 送出校正'}
             </button>
             <button
               type="button"
               onClick={() => setShowReport(false)}
-              className="px-3 py-2 bg-white border border-amber-300 text-amber-900 rounded-xl font-bold text-xs"
+              className="px-4 py-3 bg-slate-100 border border-slate-300 text-slate-700 rounded-xl font-bold text-sm"
             >
               取消
             </button>
           </div>
         </div>
-      )}
+      </BottomSheet>
     </div>
   );
 }
