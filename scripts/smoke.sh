@@ -75,6 +75,8 @@ section "3. /api/vision/analyze"
 
 # If no image provided, look for one in the cache (prefer the brightest + largest
 # so neither the brightness gate nor the resolution gate rejects it).
+# Vision API brightness gate: MIN_AVG_BRIGHTNESS=35, MAX_AVG_BRIGHTNESS=235.
+# We require 60..220 to leave a safety margin.
 if [[ -z "$IMAGE" ]]; then
   CANDIDATES=$(ls -t /Users/roger/.hermes/cache/images/*.jpg /tmp/*.jpg 2>/dev/null | head -10)
   BEST=""
@@ -94,8 +96,8 @@ print(f'{brightness} {w} {h} {w*h}')
     W=$(echo "$INFO" | cut -d' ' -f2)
     H=$(echo "$INFO" | cut -d' ' -f3)
     AREA=$(echo "$INFO" | cut -d' ' -f4)
-    # Hard requirements: brightness ≥ 60 AND min(W,H) ≥ 180 (above 480×180 gate)
-    if [[ "$BR" -lt 60 || $W -lt 480 || $H -lt 180 ]]; then
+    # Hard requirements: brightness in [60, 220] AND min(W,H) ≥ 180 (above 480×180 gate)
+    if [[ "$BR" -lt 60 || "$BR" -gt 220 || $W -lt 480 || $H -lt 180 ]]; then
       continue
     fi
     SCORE=$((BR * AREA / 10000))
@@ -110,7 +112,7 @@ print(f'{brightness} {w} {h} {w*h}')
   else
     # Fall back to first candidate (will likely fail gate, but gives a clear error)
     IMAGE=$(echo "$CANDIDATES" | head -1)
-    echo "  ⚠️  no cached image meets brightness≥60 + resolution≥480×180"
+    echo "  ⚠️  no cached image meets brightness∈[60,220] + resolution≥480×180"
     echo "      set IMAGE=/path/to/photo.jpg explicitly; using $IMAGE"
   fi
 fi
