@@ -73,16 +73,46 @@ fi
 # ─── 3. /api/vision/analyze ──────────────────────────────────────────────
 section "3. /api/vision/analyze"
 
-# If no image provided, look for one in the cache
+# If no image provided, look for one in the cache (prefer the brightest + largest
+# so neither the brightness gate nor the resolution gate rejects it).
 if [[ -z "$IMAGE" ]]; then
-  for candidate in \
-      /Users/roger/.hermes/cache/images/*.jpg \
-      /tmp/*.jpg; do
-    if [[ -f "$candidate" ]]; then
-      IMAGE=$(ls -t $candidate 2>/dev/null | head -1)
-      break
+  CANDIDATES=$(ls -t /Users/roger/.hermes/cache/images/*.jpg /tmp/*.jpg 2>/dev/null | head -10)
+  BEST=""
+  BEST_SCORE=0
+  for cand in $CANDIDATES; do
+    INFO=$(python3 -c "
+from PIL import Image
+import numpy as np
+img = Image.open('$cand').convert('L')
+arr = np.array(img)
+brightness = int(arr.mean())
+w, h = img.size
+# Score = brightness × area / 10000. Both must be above minimums to pass.
+print(f'{brightness} {w} {h} {w*h}')
+" 2>/dev/null || echo "0 0 0 0")
+    BR=$(echo "$INFO" | cut -d' ' -f1)
+    W=$(echo "$INFO" | cut -d' ' -f2)
+    H=$(echo "$INFO" | cut -d' ' -f3)
+    AREA=$(echo "$INFO" | cut -d' ' -f4)
+    # Hard requirements: brightness ≥ 60 AND min(W,H) ≥ 180 (above 480×180 gate)
+    if [[ "$BR" -lt 60 || $W -lt 480 || $H -lt 180 ]]; then
+      continue
+    fi
+    SCORE=$((BR * AREA / 10000))
+    if [[ "$SCORE" -gt "$BEST_SCORE" ]]; then
+      BEST_SCORE=$SCORE
+      BEST=$cand
     fi
   done
+  if [[ -n "$BEST" ]]; then
+    IMAGE=$BEST
+    echo "  📷 using cached image: $IMAGE (score=$BEST_SCORE)"
+  else
+    # Fall back to first candidate (will likely fail gate, but gives a clear error)
+    IMAGE=$(echo "$CANDIDATES" | head -1)
+    echo "  ⚠️  no cached image meets brightness≥60 + resolution≥480×180"
+    echo "      set IMAGE=/path/to/photo.jpg explicitly; using $IMAGE"
+  fi
 fi
 
 if [[ -z "$IMAGE" || ! -f "$IMAGE" ]]; then
