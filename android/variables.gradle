@@ -1,9 +1,14 @@
 ext {
-    minSdkVersion = 22
+    // Play automatic protection requires minSdk >= 24 (upload fails with
+    // HTTP 403 "Play automatic protection requires a minimum SDK version
+    // of 24 or higher" otherwise). API 24 = Android 7.0, ~99% of devices.
+    minSdkVersion = 24
     // compileSdk must be > targetSdk (skill: targetSdkVersion=1 commit bug).
-    // Play requires targetSdk ≥ 35 in 2026; we use 36/35.
+    // Play requires targetSdk >= 36 from Aug 31 2026 ("Target SDK of artifact
+    // is too low: 1" at commit time if below). compileSdk == targetSdk is fine
+    // on modern AGP — the old compileSdk = targetSdk+1 rule is obsolete.
     compileSdkVersion = 36
-    targetSdkVersion = 35
+    targetSdkVersion = 36
     androidxActivityVersion = '1.8.0'
     androidxAppCompatVersion = '1.6.1'
     androidxCoordinatorLayoutVersion = '1.2.0'

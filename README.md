@@ -1,4 +1,4 @@
-# 麻雀神器 PRO — AI 拍照識別、付費會員、廣告收益
+# 麻雀神器 — AI 拍照識別、付費會員、廣告收益
 
 `comparetiger.com/mahjong.html` 入面 embed 嘅 Capacitor + React app。
 AI 自動識別麻雀牌面、本地計番、Google Play 訂閱、AdMob banner。

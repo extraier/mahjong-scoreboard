@@ -1,4 +1,4 @@
-# Play Store Listing — 麻雀神器 PRO
+# Play Store Listing — 麻雀神器
 
 Copy-paste text for the Google Play Console listing.
 Package: `com.comparetiger.mahjongscoreboard` · Version: 1.0 (versionCode 1)
@@ -8,7 +8,7 @@ Package: `com.comparetiger.mahjongscoreboard` · Version: 1.0 (versionCode 1)
 ## App name (30 char limit)
 
 ```
-麻雀神器 PRO
+麻雀神器
 ```
 
 ---
@@ -55,9 +55,9 @@ Checked against the actual source on 2026-10-24:
 ## Full description (4000 char limit)
 
 ```
-麻雀神器 PRO — 廣東麻雀計分必備 App
+麻雀神器 — 廣東麻雀計分必備 App
 
-打牌唔使再數隻，影相就得。麻雀神器 PRO 用 AI 直接睇牌、認牌、計分，
+打牌唔使再數隻，影相就得。麻雀神器 用 AI 直接睇牌、認牌、計分，
 一枱開工，埋單準又快。
 
 ◆ AI 拍牌識別
@@ -82,13 +82,21 @@ Checked against the actual source on 2026-10-24:
 
 ---
 
+◆ 私隱
+你嘅牌相會用嚟做 AI 識別，識別完之後喺伺服器記錄一次
+（你嘅使用時間、識別結果、機型型號），用嚟統計同除錯。
+唔會公開你嘅相片，亦唔會攞嚟賣廣告。
+想刪資料可以喺 App 內 或者 電郵我哋。
+
+---
+
 適合：
 • 雀友聚會，唔想手抄
 • 熟客，想知自己進步咗幾多
 • 唔熟悉規則，想有個自動計分幫手
 • 任何想快啲開枱、快啲埋單嘅人
 
-免費下載，PRO 版本解鎖 AI 識別同進階統計。
+免費下載，AI 識別同對局統計全部包括在內。
 
 免責聲明：本 App 只作計分輔助，雀枱爭議請以實體牌局為準。
 ```

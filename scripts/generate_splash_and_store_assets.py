@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_splash_and_store_assets.py — install the 麻雀神器 PRO promo graphic
+generate_splash_and_store_assets.py — install the 麻雀神器 promo graphic
 as the Android launch splash, and derive the Play Store listing assets.
 
 Inputs:
@@ -125,7 +125,7 @@ def make_feature_graphic(icon_badge: Image.Image) -> Image.Image:
     sub_font = load_font(34)
     slogan_font = load_font(40)
     x = 440
-    draw.text((x, 150), "麻雀神器 PRO", font=title_font, fill=(255, 255, 255))
+    draw.text((x, 150), "麻雀神器", font=title_font, fill=(255, 255, 255))
     draw.text((x, 246), "AI 拍牌識別 · 自動計分 · 對局統計", font=sub_font, fill=(253, 230, 138))
     draw.text((x, 320), "運籌帷幄，決勝千里", font=slogan_font, fill=(255, 255, 255))
     draw.text((x, 396), "comparetiger.com", font=load_font(28), fill=(148, 163, 184))
@@ -153,11 +153,6 @@ def make_screenshot(promo: Image.Image, caption: str, subcaption: str, index: in
     draw.rectangle([(0, promo_h), (W, H)], fill=BRAND_BG)
     draw.text((80, promo_h + 90), caption, font=load_font(72), fill=(255, 255, 255))
     draw.text((80, promo_h + 190), subcaption, font=load_font(38), fill=(253, 230, 138))
-    # Small PRO badge
-    draw.rounded_rectangle(
-        [(80, promo_h + 270), (240, promo_h + 340)], radius=35, fill=(220, 38, 38)
-    )
-    draw.text((110, promo_h + 282), "PRO", font=load_font(38), fill=(255, 255, 255))
     return canvas
 
 

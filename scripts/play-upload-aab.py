@@ -5,7 +5,7 @@ Mahjong Scoreboard — upload signed AAB to Google Play Internal Testing.
 Prerequisites (do these ONCE in Play Console browser):
   1. Sign in to https://play.google.com/console with the developer account
   2. Create app:
-       - App name: 麻雀神器 PRO
+       - App name: 麻雀神器
        - Default language: Chinese (Traditional, Hong Kong)
        - App or Game: App
        - Free or Paid: Free
@@ -92,11 +92,18 @@ def main():
 
     with open(AAB_PATH, "rb") as f:
         aab_bytes = f.read()
+    # NOTE: the resumable upload URL is a GCS session URI — it needs the
+    # Bearer token too, otherwise Play returns an opaque HTTP 403.
     req = urllib.request.Request(upload_url, method="PUT", data=aab_bytes, headers={
+        "Authorization": f"Bearer {token}",
         "Content-Type": "application/octet-stream",
         "Content-Length": str(len(aab_bytes)),
     })
-    bundle = json.loads(urllib.request.urlopen(req, timeout=300).read())
+    try:
+        bundle = json.loads(urllib.request.urlopen(req, timeout=300).read())
+    except urllib.error.HTTPError as e:
+        sys.stderr.write(f"  HTTP {e.code}: {e.read().decode()}\n")
+        raise
     version_code = bundle["versionCode"]
     print(f"  ✓ bundle uploaded — versionCode = {version_code}")
 

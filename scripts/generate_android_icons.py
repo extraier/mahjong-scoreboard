@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-generate_android_icons.py — install the 麻雀神器 PRO brand emblem as the
+generate_android_icons.py — install the 麻雀神器 brand emblem as the
 Android launcher icon + splash screen.
 
 The source emblem is a circular badge on a pale background (no alpha).

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli'
 
 const config: CapacitorConfig = {
   appId: 'com.comparetiger.mahjongscoreboard',
-  appName: '麻雀神器 PRO',
+  appName: '麻雀神器',
   webDir: 'dist',
   server: {
     androidScheme: 'https', // Required for Capacitor 6 — see capacitor-wrap-web-app skill
