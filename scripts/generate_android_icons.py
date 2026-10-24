@@ -241,7 +241,9 @@ def main() -> None:
     # 4. Play Store listing icon (512×512 PNG, no transparency allowed).
     #    Kept at full quality (not quantised) — this file is NOT bundled into
     #    the APK, so there's no size cost, and Play Console displays it large.
-    listing = project_root / "dist" / "play-store-icon-512.png"
+    #    Goes to `store-assets/`, not `dist/` — `dist/` is gitignored and gets
+    #    wiped by `vite build`, which kept deleting the listing artwork.
+    listing = project_root / "store-assets" / "play-store-icon-512.png"
     listing.parent.mkdir(parents=True, exist_ok=True)
     make_legacy(badge, 512).convert("RGB").save(listing, optimize=True)
     print(f"  play store listing: {listing} (512×512 opaque, full quality)")

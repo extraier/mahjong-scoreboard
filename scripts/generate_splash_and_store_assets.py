@@ -189,7 +189,11 @@ def main() -> None:
     save_webp(base_splash, RES_ROOT / "drawable" / "splash.webp")
     print(f"  drawable/splash.webp (default fallback)  {base_splash.size}")
 
-    dist = PROJECT_ROOT / "dist"
+    # Play Console assets go to `store-assets/`, NOT `dist/`.
+    # `dist/` is gitignored AND wiped by `vite build`, so the listing assets
+    # kept disappearing after every web build. `store-assets/` is committed
+    # so the Play Console upload always has the current artwork on disk.
+    dist = PROJECT_ROOT / "store-assets"
     dist.mkdir(parents=True, exist_ok=True)
 
     # 2. Play Console feature graphic

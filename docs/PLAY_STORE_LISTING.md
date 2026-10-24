@@ -135,15 +135,38 @@ Checked against the actual source on 2026-10-24:
 
 ---
 
-## Store assets (ready in `dist/`)
+## Store assets (ready in `store-assets/`)
+
+> These live in `store-assets/`, **not** `dist/`. `dist/` is gitignored and
+> `vite build` wipes it, which kept deleting the listing artwork.
 
 | Asset | File | Size |
 |---|---|---:|
-| App icon 512×512 | `play-store-icon-512.png` | 267 KB |
-| Feature graphic 1024×500 | `play-store-feature-graphic-1024x500.png` | 160 KB |
-| Phone screenshot 1 | `play-store-screenshot-phone-1.png` | 1.56 MB |
-| Phone screenshot 2 | `play-store-screenshot-phone-2.png` | 1.57 MB |
-| Release bundle | `mahjong-pro-release-v1.0.aab` | 4.22 MB |
+| App icon 512×512 | `store-assets/play-store-icon-512.png` | 279 KB |
+| Feature graphic 1024×500 | `store-assets/play-store-feature-graphic-1024x500.png` | 163 KB |
+| Phone screenshot 1 | `store-assets/play-store-screenshot-phone-1.png` | 1.47 MB |
+| Phone screenshot 2 | `store-assets/play-store-screenshot-phone-2.png` | 1.48 MB |
+| Release bundle | `dist/mahjong-pro-release-v1.0.aab` | 4.22 MB |
+
+### Source artwork (committed)
+
+| Asset | File | Size |
+|---|---|---:|
+| Emblem (master) | `assets/branding/emblem-800.jpg` | 800×800 |
+| Promo (master) | `assets/branding/promo-714x1280.jpg` | 714×1280 |
+
+Regenerate everything from these:
+
+```bash
+python3 scripts/generate_android_icons.py assets/branding/emblem-800.jpg
+python3 scripts/generate_splash_and_store_assets.py \
+    --promo assets/branding/promo-714x1280.jpg \
+    --icon  assets/branding/emblem-800.jpg
+```
+
+The emblem reads **麻雀神器** on the top arc and **計算機** on the red
+ribbon. The URL arc reads `comparetiger.com`. There is no "PRO" anywhere —
+the earlier emblem had it embossed in the ribbon and it was removed.
 
 > Feature graphic is centre-weighted (medallion + text centred as a block).
 > Play crops it differently per placement — if the mobile crop clips the
