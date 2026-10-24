@@ -186,6 +186,14 @@ def main() -> None:
         save_webp(img, RES_ROOT / f"drawable-{suffix}" / "splash.webp")
         print(f"  drawable-{suffix}/splash.webp  {img.size}")
 
+    # 1b. Base drawable fallback. Without a declaration in the plain
+    #     `drawable/` folder, lintVital fails the release build with
+    #     MissingDefaultResource and the app can crash when the splash is
+    #     queried in a configuration that matches neither -port- nor -land-.
+    base_splash = fit_portrait(promo, 720)
+    save_webp(base_splash, RES_ROOT / "drawable" / "splash.webp")
+    print(f"  drawable/splash.webp (default fallback)  {base_splash.size}")
+
     dist = PROJECT_ROOT / "dist"
     dist.mkdir(parents=True, exist_ok=True)
 
