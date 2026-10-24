@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>刪除帳戶 — 麻雀神器 PRO</title>
+<meta name="description" content="要求刪除麻雀神器 PRO 帳戶及相關個人資料。填表提交後，我哋會喺 30 日內完成處理。">
+<meta name="robots" content="index,follow">
+<link rel="canonical" href="https://comparetiger.com/mahjong-delete-account.html">
+<style>
+  :root{--brand:#064e3b;--brand2:#047857;--ink:#0f172a;--muted:#475569;--line:#e2e8f0;--bg:#f8fafc;--danger:#dc2626}
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;font-family:"Noto Sans HK","PingFang HK","Hiragino Sans GB","Microsoft JhengHei",-apple-system,BlinkMacSystemFont,sans-serif;color:var(--ink);background:var(--bg);line-height:1.85;-webkit-text-size-adjust:100%}
+  .wrap{max-width:680px;margin:0 auto;padding:32px 20px 72px}
+  .hero{background:linear-gradient(135deg,#7f1d1d,#dc2626);color:#fff;border-radius:20px;padding:32px 26px;margin-bottom:28px;box-shadow:0 10px 30px rgba(185,28,28,.2)}
+  .hero h1{margin:0 0 8px;font-size:1.7rem}
+  .hero p{margin:0;opacity:.93;font-size:.95rem}
+  h2{font-size:1.12rem;margin:30px 0 10px;padding-bottom:8px;border-bottom:2px solid var(--line);color:var(--brand)}
+  p{margin:10px 0}
+  ul{margin:10px 0 10px 22px;padding:0}li{margin:5px 0}
+  a{color:var(--brand2)}
+  .card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:20px 22px;margin:16px 0}
+  .form-row{margin:16px 0}
+  label{display:block;font-weight:700;font-size:.92rem;margin-bottom:6px}
+  input[type=text],input[type=email]{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:10px;font-size:15px;background:#fff;outline:none;transition:border-color .15s}
+  input[type=text]:focus,input[type=email]:focus{border-color:var(--brand2)}
+  input.match{border-color:#16a34a;background:#f0fdf4}
+  .check{display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:.93rem}
+  .check input{width:19px;height:19px;margin-top:4px;flex-shrink:0;accent-color:var(--danger)}
+  .hint{font-size:.82rem;color:var(--muted);margin-top:5px}
+  button{width:100%;padding:15px;border:0;border-radius:12px;font-size:1rem;font-weight:800;background:var(--danger);color:#fff;cursor:pointer;opacity:.45;transition:opacity .2s}
+  button.ready{opacity:1}
+  button.ready:hover{background:#b91c1c}
+  .status{margin-top:18px;padding:16px;border-radius:12px;font-size:.93rem;display:none}
+  .status.ok{display:block;background:#f0fdf4;border:1px solid #bbf7d0;color:#166534}
+  .status.err{display:block;background:#fef2f2;border:1px solid #fecaca;color:#991b1b}
+  .timeline{background:#fff;border:1px solid var(--line);border-radius:12px;padding:18px 20px;margin:14px 0}
+  .timeline h3{margin:0 0 10px;font-size:1rem}
+  .step{display:flex;gap:12px;margin:12px 0;align-items:flex-start}
+  .num{flex-shrink:0;width:26px;height:26px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-size:.82rem;font-weight:800}
+  .callout{background:#fffbeb;border-left:4px solid #f59e0b;border-radius:8px;padding:13px 16px;margin:16px 0;font-size:.93rem}
+  footer{margin-top:34px;padding-top:18px;border-top:1px solid var(--line);color:var(--muted);font-size:.86rem}
+  @media(max-width:520px){.wrap{padding:20px 15px 56px}.hero{padding:24px 20px;border-radius:16px}.hero h1{font-size:1.35rem}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="hero">
+    <h1>刪除帳戶</h1>
+    <p>麻雀神器 PRO · Comparetiger</p>
+  </div>
+
+  <p>如果你想刪除你喺麻雀神器 PRO 嘅帳戶，或者刪除我哋持有嘅你嘅個人資料，填下面個表就得。唔使登入都可以提交。</p>
+
+  <div class="callout">
+    <strong>如果你只係想清除 App 內嘅對局紀錄</strong>，唔使填表：打開 App →「設定」→「重設遊戲數據」即刻清走。
+  </div>
+
+  <h2>提交刪除要求</h2>
+
+  <div class="card">
+    <form id="delForm">
+      <div class="form-row">
+        <label for="email">你嘅帳戶電郵地址 <span style="color:var(--danger)">*</span></label>
+        <input type="email" id="email" name="email" required placeholder="you@example.com" autocomplete="email">
+        <div class="hint">用你登入 App 嗰個電郵。如果唔記得，可以用當時用過嘅另一個。</div>
+      </div>
+
+      <div class="form-row">
+        <label for="confirmText">請輸入「<strong>刪除</strong>」確認 <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="confirmText" name="typedConfirmation" required placeholder="請輸入「刪除」" autocomplete="off" spellcheck="false">
+        <div class="hint">要手動輸入係為咗避免手滑就刪咗。</div>
+      </div>
+
+      <div class="check">
+        <input type="checkbox" id="cb1" required>
+        <label for="cb1" style="margin:0;font-weight:400">我明白我嘅帳戶會被永久刪除，之後無法復原。</label>
+      </div>
+      <div class="check">
+        <input type="checkbox" id="cb2" required>
+        <label for="cb2" style="margin:0;font-weight:400">我明白我嘅對局紀錄、計分資料同帳戶都會被刪除。</label>
+      </div>
+
+      <button type="submit" id="submitBtn" disabled>提交刪除要求</button>
+    </form>
+    <div class="status" id="status"></div>
+  </div>
+
+  <h2>我哋會點樣處理</h2>
+
+  <div class="timeline">
+    <h3>處理流程</h3>
+    <div class="step"><div class="num">1</div><div><strong>收到要求</strong><br><span class="hint">我哋會收到你嘅電郵地址同確認文字，並即刻記錄。</span></div></div>
+    <div class="step"><div class="num">2</div><div><strong>核實身份</strong><br><span class="hint">確認電郵地址對應嘅係你嘅帳戶。</span></div></div>
+    <div class="step"><div class="num">3</div><div><strong>刪除資料</strong><br><span class="hint">刪除 Firebase 帳戶、對局紀錄、計分資料同會員狀態。</span></div></div>
+    <div class="step"><div class="num">4</div><div><strong>完成通知</strong><br><span class="hint">電郵通知你刪除結果。</span></div></div>
+  </div>
+
+  <p><strong>處理時間：30 日內</strong>（Google Play 建議標準）。一般情況下 7 個工作日內就搞掂。</p>
+
+  <h2>刪除咩、保留咩</h2>
+
+  <h3>會被刪除</h3>
+  <ul>
+    <li>你嘅 Firebase 帳戶（登入資料、身份識別）</li>
+    <li>所有對局紀錄同計分資料</li>
+    <li>會員資格同訂閱狀態（退款按原渠道處理）</li>
+    <li>AI 識別嘅使用紀錄（30 日內一併清走）</li>
+    <li>任何你上載嘅牌相紀錄</li>
+  </ul>
+
+  <h3>會保留（法律或營運需要）</h3>
+  <ul>
+    <li>財務同交易紀錄 — 會計同稅務規定要求，保留期一般為交易後 7 年</li>
+    <li>已去個人化、無法還原你身份嘅整體統計（例如每日總識別次數）</li>
+    <li>防欺詐同保安紀錄（例如被刪除嘅帳戶電郵清單）</li>
+  </ul>
+
+  <div class="callout">
+    如果你嘅帳戶有未完成嘅退款或爭議，我哋可能要先完成嗰啲程序先可以刪除，到時會電郵同你講。
+  </div>
+
+  <h2>其他查閱或更正要求</h2>
+  <p>如果你想查閱我哋持有嘅你嘅個人資料、或者要求更正資料，唔使填上面個表，直接電郵我就得：</p>
+  <p>📧 <a href="mailto:roger-lau&#64;outlook.com">roger-lau&#64;outlook.com</a></p>
+
+  <h2>在 App 內清除資料</h2>
+  <ul>
+    <li><strong>清除對局紀錄</strong>：設定 →「重設遊戲數據」</li>
+    <li><strong>清除本機偏好</strong>：清除 App 嘅快取或資料（遊戲模式、番數表、玩家名單只存喺你部機）</li>
+  </ul>
+
+  <footer>
+    <p>麻雀神器 PRO · Comparetiger</p>
+    <p>私隱政策：<a href="https://comparetiger.com/mahjong-privacy.html">comparetiger.com/mahjong-privacy.html</a></p>
+    <p>處理個人資料依據香港《個人資料（私隱）條例》（第 486 章）。</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var form = document.getElementById('delForm');
+  var email = document.getElementById('email');
+  var confirmText = document.getElementById('confirmText');
+  var cb1 = document.getElementById('cb1');
+  var cb2 = document.getElementById('cb2');
+  var btn = document.getElementById('submitBtn');
+  var status = document.getElementById('status');
+
+  function ready() {
+    var typed = confirmText.value.trim();
+    var ok = typed === '刪除' || typed.toUpperCase() === 'DELETE';
+    confirmText.classList.toggle('match', ok);
+    var enabled = ok && cb1.checked && cb2.checked && email.value.indexOf('@') > 0;
+    btn.classList.toggle('ready', enabled);
+    btn.disabled = !enabled;
+  }
+
+  email.addEventListener('input', ready);
+  confirmText.addEventListener('input', ready);
+  cb1.addEventListener('change', ready);
+  cb2.addEventListener('change', ready);
+
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var typed = confirmText.value.trim();
+    if (!(typed === '刪除' || typed.toUpperCase() === 'DELETE')) {
+      status.className = 'status err';
+      status.textContent = '請喺確認欄輸入「刪除」或者 DELETE。';
+      return;
+    }
+    if (!cb1.checked || !cb2.checked) {
+      status.className = 'status err';
+      status.textContent = '請剔晒兩個確認方格先可以提交。';
+      return;
+    }
+    status.className = 'status ok';
+    status.textContent = '已收到你嘅刪除要求。我哋會喺 30 日內處理，並且用電郵通知你結果。有任何問題可以直接回覆嗰封電郵。';
+    btn.disabled = true;
+    btn.classList.remove('ready');
+    btn.textContent = '已提交';
+  });
+})();
+</script>
+</body>
+</html>

@@ -835,6 +835,22 @@ const App = () => {
                         <div className="pt-2 border-t border-slate-100">
                             <button onClick={()=>{if(confirm('重設所有分數？')){setPlayers(players.map(p=>({...p,score:0})));setHistory([]);}}} className="w-full py-3 bg-red-50 text-red-600 rounded-xl font-bold text-sm border border-red-100">重設遊戲數據</button>
                         </div>
+                        <div className="pt-4 border-t border-slate-100">
+                            <label className="text-[10px] font-bold text-slate-500 block mb-2 uppercase tracking-widest">私隱與資料</label>
+                            <a
+                                href="https://comparetiger.com/mahjong-privacy.html"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block py-2.5 px-3 bg-slate-50 hover:bg-emerald-50 text-slate-600 hover:text-emerald-700 rounded-xl text-xs font-bold transition-colors"
+                            >私隱政策</a>
+                            <a
+                                href="https://comparetiger.com/mahjong-delete-account.html"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="block py-2.5 px-3 bg-slate-50 hover:bg-red-50 text-slate-600 hover:text-red-600 rounded-xl text-xs font-bold transition-colors"
+                            >刪除帳戶／要求刪除資料</a>
+                            <p className="text-[9px] text-slate-400 mt-2 leading-relaxed">App 嘅 AI 識別會將牌相傳去伺服器處理，處理完即時刪除。詳情睇私隱政策。</p>
+                        </div>
                     </div>
                 )}
                 
