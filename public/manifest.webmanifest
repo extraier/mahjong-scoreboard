@@ -1,0 +1,25 @@
+{
+  "name": "麻雀神器 PRO",
+  "short_name": "麻雀神器",
+  "description": "廣東麻雀計分神器 — AI 拍牌識別、自動計分、對局統計。",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#064e3b",
+  "theme_color": "#064e3b",
+  "lang": "zh-HK",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
