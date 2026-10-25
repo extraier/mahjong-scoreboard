@@ -20,12 +20,14 @@ the HTTP URL is unreachable (so existing tests/dev still work).
 """
 
 import argparse
+import hmac
+import os
 import sys
 import time
 from pathlib import Path
 
 import uvicorn
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -76,8 +78,61 @@ def ready():
     return {'ready': True}
 
 
+# Shared secret for the public tunnel. The Node server sends this header;
+# anything that cannot present it gets 401. Set via LOCAL_VISION_TOKEN.
+# When unset, the server stays OPEN but only on 127.0.0.1 (dev default).
+def _load_token() -> str:
+    """Read the shared secret from the env OR from a file.
+
+    The env var is the primary channel, but launchd does not always
+    propagate EnvironmentVariables to a re-launched job (the job's
+    environment is snapshotted at bootstrap). Reading a file is immune
+    to that and makes the secret easy to rotate without touching the
+    plist. Env wins when both are present.
+    """
+    env = os.environ.get('LOCAL_VISION_TOKEN', '').strip()
+    if env:
+        return env
+    for path in (
+        os.environ.get('LOCAL_VISION_TOKEN_FILE', '').strip(),
+        os.path.expanduser('~/.hermes/secrets/local-vision-token'),
+    ):
+        if path and os.path.isfile(path):
+            try:
+                with open(path) as f:
+                    val = f.read().strip()
+                if val:
+                    return val
+            except OSError:
+                continue
+    return ''
+
+
+LOCAL_VISION_TOKEN = _load_token()
+
+
+def _require_token(x_local_vision_token: str | None = Header(default=None)) -> None:
+    """Reject requests without the shared secret.
+
+    This server may be exposed publicly via a Cloudflare Tunnel, so the
+    loopback-only binding is NOT sufficient protection. Anyone who can
+    reach the URL could burn GPU time or abuse the model. When
+    LOCAL_VISION_TOKEN is set, the secret is mandatory.
+    """
+    if not LOCAL_VISION_TOKEN:
+        # No token configured -> open (dev / loopback-only mode).
+        return
+    expected = LOCAL_VISION_TOKEN
+    provided = (x_local_vision_token or '').strip()
+    if not hmac.compare_digest(provided, expected):
+        raise HTTPException(status_code=401, detail='invalid or missing X-Local-Vision-Token')
+
+
 @app.post('/analyze')
-async def analyze(image: UploadFile = File(...)):
+async def analyze(
+    image: UploadFile = File(...),
+    _auth: None = Depends(_require_token),
+):
     """Accept multipart/form-data with 'image' field. Returns tile list + bboxes.
 
     Validates image quality (resolution / blur / brightness). Returns a
@@ -110,7 +165,10 @@ class AnalyzeJSON(BaseModel):
 
 
 @app.post('/analyze_json')
-async def analyze_json(body: AnalyzeJSON):
+async def analyze_json(
+    body: AnalyzeJSON,
+    _auth: None = Depends(_require_token),
+):
     """Accept { image_b64: "..." } JSON body (matches npm Buffer.toString('base64')).
 
     Same quality validation as /analyze — returns 422 with retry instructions

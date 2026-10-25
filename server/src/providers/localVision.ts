@@ -36,6 +36,12 @@ import type { VisionInput, VisionProvider } from './visionProvider.js';
 const PYTHON_BIN = process.env.LOCAL_VISION_PYTHON ?? '.mlvenv/bin/python';
 const SCRIPT_PATH = 'scripts/mahjong_local_inference.py';
 const HTTP_URL = process.env.LOCAL_VISION_HTTP_URL ?? 'http://127.0.0.1:8789';
+/**
+ * Shared secret for the local vision server. Required when the server is
+ * exposed via a tunnel (the loopback bind is not protection once it is
+ * on the public internet). Sent as X-Local-Vision-Token.
+ */
+const HTTP_TOKEN = process.env.LOCAL_VISION_TOKEN ?? '';
 const USE_HTTP = (process.env.LOCAL_VISION_MODE ?? 'http') !== 'spawn';
 
 interface LocalVisionResponse {
@@ -83,6 +89,7 @@ async function callHttp(
       method: 'POST',
       body: form,
       signal: ctrl.signal,
+      headers: HTTP_TOKEN ? { 'X-Local-Vision-Token': HTTP_TOKEN } : undefined,
     });
   } catch (e) {
     clearTimeout(t);
@@ -217,7 +224,11 @@ async function runPython(args: string[], timeoutMs: number): Promise<{ stdout: s
   return new Promise((resolve, reject) => {
     const proc = spawn(PYTHON_BIN, args, {
       cwd: process.cwd(),
-      env: { ...process.env, PYTHONUNBUFFERED: '1' },
+      env: {
+        ...process.env,
+        PYTHONUNBUFFERED: '1',
+        ...(HTTP_TOKEN ? { LOCAL_VISION_TOKEN: HTTP_TOKEN } : {}),
+      },
     });
     let stdout = '';
     let stderr = '';
