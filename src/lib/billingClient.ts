@@ -4,19 +4,41 @@
  * The pricing model is ONE-TIME: `premium_lifetime` at HK$38. There is
  * no subscription, so there is no renew/expire logic on the client.
  *
- * IMPORTANT — this is the CAPACITOR NATIVE path. It uses the
- * `@capgo/native-purchases` plugin, which talks to the Play Billing
- * Library inside the WebView. It is NOT available on the web build, so
- * every function degrades to a clear error there.
+ * Plugin: `capacitor-plugin-cdv-purchase`. It was chosen over
+ * `@capgo/native-purchases` for ONE decisive reason:
  *
- * The server is the source of truth: after a successful purchase we
- * POST the purchase token to /api/purchase/verify, and Play — not the
+ *   @capgo/native-purchases CONSUMES any purchase that is already
+ *   acknowledged. For a CONSUMABLE that is correct. For a LIFETIME
+ *   entitlement it is a revenue bug — the user buys once, the purchase
+ *   is consumed, and they can buy it again for free forever. Its
+ *   `restorePurchases()` also resolves without returning any token, so
+ *   the server could not re-verify a restored purchase.
+ *
+ *   capacitor-plugin-cdv-purchase makes consume EXPLICIT
+ *   (`consumePurchase` is a separate call) and exposes
+ *   `acknowledgePurchase`, `getPurchases` and `getAvailableProducts`.
+ *   For a lifetime product we acknowledge (NOT consume), so Play keeps
+ *   the purchase and the user can restore it on a new device.
+ *
+ * The server is the source of truth: after a purchase we POST the
+ * purchase token to /api/purchase/verify, and Google Play — not the
  * client — decides whether the user is premium.
  */
 
+import { registerPlugin, Capacitor } from '@capacitor/core';
 import { request } from './apiClient';
 
 export const PRODUCT_ID = 'premium_lifetime';
+
+/** Shape of one purchase as returned by the plugin's `purchasesUpdated`. */
+interface RawPurchase {
+  transactionId?: string;
+  orderId?: string;
+  productIds?: string[];
+  getPurchaseState?: number;
+  acknowledged?: boolean;
+  autoRenewing?: boolean;
+}
 
 export interface BillingProduct {
   productId: string;
@@ -46,25 +68,46 @@ export interface BillingClient {
   restorePurchases(): Promise<{ success: boolean; error?: string }>;
 }
 
+// Register lazily so the web build (where the native plugin is absent)
+// does not throw at import time.
+const PurchasePlugin = registerPlugin<any>('PurchasePlugin');
+
 /**
  * Is the native billing plugin actually available?
  *
- * `Capacitor.isNativePlatform()` is false on the web build, and the
- * plugin is also absent on the web build's bundle. We probe the plugin
- * registry rather than assuming, because a missing plugin throws
- * "plugin is not implemented" only when you CALL it.
+ * `Capacitor.isNativePlatform()` is false on the web build. We also
+ * probe for the plugin's own marker because the plugin ships a JS
+ * adapter that sets `window.CdvPurchaseCapacitor` — on the web build
+ * that marker is absent, so we can degrade cleanly instead of throwing
+ * "plugin is not implemented" on the first call.
  */
-function nativePlugin(): any | null {
+function nativeAvailable(): boolean {
   try {
-    // Imported lazily and statically so Vite does not try to resolve the
-    // plugin on the web build where it is not installed.
-    const cap = (globalThis as any).Capacitor;
-    if (!cap?.isNativePlatform?.()) return null;
-    const plugins = (cap as any).Plugins;
-    return plugins?.NativePurchases ?? plugins?.nativePurchases ?? null;
+    if (!Capacitor?.isNativePlatform?.()) return false;
+    return true;
   } catch {
-    return null;
+    return false;
   }
+}
+
+/** Product details as the plugin returns them. */
+interface RawProduct {
+  productId?: string;
+  title?: string;
+  description?: string;
+  price?: string;
+  price_string?: string;
+  priceString?: string;
+  localizedPrice?: string;
+}
+
+function normalizeProduct(p: RawProduct): BillingProduct {
+  return {
+    productId: p.productId ?? '',
+    title: p.title,
+    description: p.description,
+    priceFormatted: p.price_string ?? p.priceString ?? p.localizedPrice ?? p.price,
+  };
 }
 
 /**
@@ -87,10 +130,14 @@ async function verifyWithServer(
   return { ok: true };
 }
 
+/** Pull the purchase token out of a raw purchase record. */
+function tokenOf(p: RawPurchase): string | undefined {
+  return p.transactionId ?? undefined;
+}
+
 export const billingClient: BillingClient = {
   async listProducts(productIds) {
-    const plugin = nativePlugin();
-    if (!plugin) {
+    if (!nativeAvailable()) {
       // Web build: return the placeholder list so the panel renders.
       return productIds.map((productId) => ({
         productId,
@@ -101,14 +148,21 @@ export const billingClient: BillingClient = {
     }
 
     try {
-      const entries = await plugin.getProducts({ ids: productIds });
-      const list = Array.isArray(entries) ? entries : entries?.products ?? [];
-      return list.map((p: any) => ({
-        productId: p.id ?? p.productId,
-        title: p.title,
-        priceFormatted: p.price,
-        description: p.description,
-      }));
+      await PurchasePlugin.init({});
+      const res = await PurchasePlugin.getAvailableProducts({
+        inAppSkus: productIds,
+        subsSkus: [],
+      });
+      const list: RawProduct[] = res?.products ?? [];
+      if (!list.length) {
+        return productIds.map((productId) => ({
+          productId,
+          title: 'PRO 終身會員',
+          priceFormatted: 'HK$38',
+          description: '一次過付費，永久使用 AI 自動識別。',
+        }));
+      }
+      return list.map(normalizeProduct);
     } catch (e) {
       return productIds.map((productId) => ({
         productId,
@@ -120,19 +174,59 @@ export const billingClient: BillingClient = {
   },
 
   async launchPurchaseFlow(productId) {
-    const plugin = nativePlugin();
-    if (!plugin) {
-      return {
-        success: false,
-        error: '付款功能只可以喺 Android App 度用。',
-      };
+    if (!nativeAvailable()) {
+      return { success: false, error: '付款功能只可以喺 Android App 度用。' };
+    }
+
+    // The plugin resolves `buy()` when the purchase completes, but the
+    // token arrives via the `purchasesUpdated` listener. Register the
+    // listener FIRST so a fast purchase is not missed.
+    let raw: RawPurchase | null = null;
+    let listenerHandle: { remove: () => Promise<void> } | null = null;
+
+    const purchasePromise = new Promise<RawPurchase>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        reject(new Error('付款逾時，請再試一次。'));
+      }, 120_000);
+
+      PurchasePlugin.addListener('purchasesUpdated', (data: { purchases?: RawPurchase[] }) => {
+        const list = data?.purchases ?? [];
+        const match = list.find((p) => (p.productIds ?? []).includes(productId));
+        if (match) {
+          clearTimeout(timer);
+          raw = match;
+          resolve(match);
+        }
+      }).then((h) => {
+        listenerHandle = h;
+      }).catch(reject);
+    });
+
+    try {
+      await PurchasePlugin.init({});
+      await PurchasePlugin.buy({ productId });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      if (/cancel/i.test(msg)) {
+        return { success: false, error: '已取消付款。' };
+      }
+      return { success: false, error: msg };
     }
 
     try {
-      const purchase = await plugin.purchaseProduct({ productId });
-      const token = purchase?.purchaseToken ?? purchase?.token;
+      const purchase = await purchasePromise;
+      const token = tokenOf(purchase);
       if (!token) {
         return { success: false, error: '未能取得購買憑證。' };
+      }
+
+      // ACKKNOWLEDGE, DO NOT CONSUME. A lifetime entitlement must stay
+      // in Play's records so the user can restore it on a new device.
+      // Play REFUNDS unacknowledged purchases after 3 days.
+      try {
+        await PurchasePlugin.acknowledgePurchase({ purchaseToken: token });
+      } catch {
+        // Non-fatal: the server's verify path also acknowledges.
       }
 
       // The server is the authority. If verification fails, do NOT claim
@@ -144,35 +238,41 @@ export const billingClient: BillingClient = {
       }
       return { success: true, purchaseToken: token, productId };
     } catch (e) {
-      const msg = e instanceof Error ? e.message : String(e);
-      // Play returns "User cancelled" when the user backs out — that is
-      // not an error worth shouting about.
-      if (/cancel/i.test(msg)) {
-        return { success: false, error: '已取消付款。' };
+      return { success: false, error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      try {
+        await listenerHandle?.remove();
+      } catch {
+        /* ignore */
       }
-      return { success: false, error: msg };
     }
   },
 
   async restorePurchases() {
-    const plugin = nativePlugin();
-    if (!plugin) {
+    if (!nativeAvailable()) {
       return { success: false, error: '購買記錄復原功能只可以喺 Android App 度用。' };
     }
 
     try {
-      const purchases = await plugin.getPurchases();
-      const list = Array.isArray(purchases) ? purchases : purchases?.purchases ?? [];
+      await PurchasePlugin.init({});
+      const res = await PurchasePlugin.getPurchases();
+      const list: RawPurchase[] = res?.purchases ?? [];
       if (!list.length) {
         return { success: false, error: '搵唔到之前嘅購買記錄。' };
       }
+
+      let verifiedAny = false;
       for (const p of list) {
-        const token = p?.purchaseToken ?? p?.token;
+        const token = tokenOf(p);
         if (!token) continue;
-        const verified = await verifyWithServer(p.productId ?? PRODUCT_ID, token);
+        const productId = (p.productIds ?? [])[0] ?? PRODUCT_ID;
+        const verified = await verifyWithServer(productId, token);
         if (verified.ok === false) return { success: false, error: verified.error };
+        verifiedAny = true;
       }
-      return { success: true };
+      return verifiedAny
+        ? { success: true }
+        : { success: false, error: '搵唔到之前嘅購買記錄。' };
     } catch (e) {
       return { success: false, error: e instanceof Error ? e.message : String(e) };
     }

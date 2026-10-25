@@ -116,20 +116,27 @@ export function isEntitlementActive(doc: EntitlementDoc | null): boolean {
  * - Otherwise → free tier (no AI access)
  */
 export async function computeEntitlements(ctx: UserContextLike): Promise<Entitlements> {
-  const testing = isFreePremiumTestingAccount(ctx);
-  const doc = testing ? null : await readEntitlementDoc(ctx.uid);
+  // Always read the doc. The testing allowlist is a FALLBACK for
+  // premium, not an override — a paying customer who also matches an
+  // allowlist suffix must still get their purchased lifetime quota, not
+  // the smaller testing quota. (Ordering this the other way round
+  // silently downgraded a lifetime purchase from 2000 uses to 200.)
+  const doc = await readEntitlementDoc(ctx.uid);
+  const hasPaidEntitlement = isEntitlementActive(doc);
+  const testing = !hasPaidEntitlement && isFreePremiumTestingAccount(ctx);
 
-  const isPremium = testing || isEntitlementActive(doc);
+  const isPremium = hasPaidEntitlement || testing;
 
-  // Quota: the doc wins; testing accounts use the env-configured quota.
+  // Quota: the paid doc wins; testing accounts use the env-configured
+  // quota. A paid lifetime plan keeps its own (larger) quota.
   let aiQuotaTotal: number | null;
   let aiUsesRemaining: number | null;
-  if (testing) {
-    aiQuotaTotal = config.quota.monthlyAiUses;
-    aiUsesRemaining = aiQuotaTotal;
-  } else if (doc) {
+  if (hasPaidEntitlement && doc) {
     aiQuotaTotal = doc.aiQuotaTotal ?? null;
     aiUsesRemaining = doc.aiUsesRemaining ?? null;
+  } else if (testing) {
+    aiQuotaTotal = config.quota.monthlyAiUses;
+    aiUsesRemaining = aiQuotaTotal;
   } else {
     aiQuotaTotal = null;
     aiUsesRemaining = null;
