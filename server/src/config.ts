@@ -57,7 +57,10 @@ export interface Config {
   };
 
   quota: {
+    /** AI uses per month for subscription (renewing) premium users. */
     monthlyAiUses: number;
+    /** Total AI uses for a one-time (lifetime) premium purchase. */
+    lifetimeAiUses: number;
   };
 
   googlePlay: {
@@ -113,6 +116,7 @@ function loadConfig(): Config {
   const model = process.env.MINIMAX_VISION_MODEL || 'MiniMax-M3';
 
   const monthlyAiUses = num(process.env.AI_MONTHLY_QUOTA, 200);
+  const lifetimeAiUses = num(process.env.AI_LIFETIME_QUOTA, 2000);
 
   const gplayPkg = process.env.GOOGLE_PLAY_PACKAGE_NAME || null;
   const gplayKey = process.env.GOOGLE_PLAY_SA_KEY || null;
@@ -135,7 +139,7 @@ function loadConfig(): Config {
       timeoutMs: num(process.env.MINIMAX_TIMEOUT_MS, 30_000),
       maxImageBytes: num(process.env.MINIMAX_MAX_IMAGE_BYTES, 10 * 1024 * 1024),
     },
-    quota: { monthlyAiUses },
+    quota: { monthlyAiUses, lifetimeAiUses },
     googlePlay: {
       packageName: gplayPkg,
       serviceAccountKey: gplayKey,

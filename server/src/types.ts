@@ -23,7 +23,8 @@ export interface Entitlements {
   isPremium: boolean;
   adsEnabled: boolean;
   canUseAi: boolean;
-  remainingAiUses: number;
+  /** null = unlimited quota (lifetime plan). A number is the remaining count. */
+  remainingAiUses: number | null;
   resetAt: string | null;
   subscription: Subscription | null;
   fetchedAt: string;
@@ -32,9 +33,12 @@ export interface Entitlements {
 export interface Subscription {
   platform: 'google_play';
   productId: string;
-  expiresAt: string;
+  /** null for a lifetime plan (never expires). */
+  expiresAt: string | null;
   autoRenewing: boolean;
-  purchaseToken: string;
+  /** true = one-time purchase, never expires. */
+  lifetime: boolean;
+  purchaseToken?: string;
 }
 
 export interface MahjongVisionResult {
@@ -55,7 +59,7 @@ export interface VisionAnalyzeResponse {
   requestId: string;
   provider: 'minimax' | 'stub' | 'ollama' | 'local';
   result: MahjongVisionResult;
-  usage: { remainingAiUses: number };
+  usage: { remainingAiUses: number | null };
 }
 
 export interface ApiErrorResponse {

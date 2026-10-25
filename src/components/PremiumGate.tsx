@@ -32,7 +32,7 @@ export interface PremiumGateProps {
 const DEFAULT_BENEFITS = [
   'AI 自動識別麻雀牌面',
   '完全隱藏廣告',
-  '每月 200 次識別配額',
+  '2,000 次 AI 識別配額',
 ];
 
 export function PremiumGate({

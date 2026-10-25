@@ -46,8 +46,11 @@ export interface ApiError {
 export interface SubscriptionInfo {
   platform: 'google_play' | 'stripe' | 'apple_iap';
   productId: string;
-  expiresAt: string;       // ISO 8601
+  /** null for a lifetime plan (never expires). */
+  expiresAt: string | null;       // ISO 8601
   autoRenewing: boolean;
+  /** true = one-time purchase, never expires. */
+  lifetime: boolean;
 }
 
 export interface Entitlements {

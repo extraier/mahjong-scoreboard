@@ -14,11 +14,12 @@ import { healthzRouter } from './routes/healthz.js';
 import { accountDeletionRouter } from './routes/accountDeletion.js';
 import { meRouter } from './routes/me.js';
 import { createVisionRouter } from './routes/vision.js';
+import { purchaseRouter } from './routes/purchase.js';
 import { createStubProvider } from './providers/stubProvider.js';
 import { createMinimaxProvider } from './providers/minimaxVision.js';
 import { createOllamaProvider } from './providers/ollamaVision.js';
 import { createLocalVisionProvider } from './providers/localVision.js';
-import { computeEntitlementSummary } from './services/entitlements.js';
+import { computeEntitlementSummary, decrementQuota } from './services/entitlements.js';
 import type { VisionProvider } from './providers/visionProvider.js';
 
 function selectVisionProvider(): VisionProvider {
@@ -44,21 +45,15 @@ function selectVisionProvider(): VisionProvider {
  * subscription state will replace the second branch in a later commit.
  */
 function makeIsPremiumClosure() {
-  return async (uid: string): Promise<{
+  return async (uid: string, email?: string | null): Promise<{
     isPremium: boolean;
     canUseAi: boolean;
-    remainingAiUses: number;
+    remainingAiUses: number | null;
   }> => {
-    // Email is not visible to this closure (only uid is passed). The
-    // uid allowlist + the env-driven config still work. If a route
-    // needs the email too, refactor isPremium to take AuthContext.
-    return computeEntitlementSummary({ uid, email: undefined });
+    // Pass the email through: the env-driven allowlist matches on the
+    // email suffix, so dropping it would silently skip the allowlist.
+    return computeEntitlementSummary({ uid, email: email ?? null });
   };
-}
-
-/** Stub quota decrement. Replaced in commit 6 with Firestore counter. */
-async function stubDecrementQuota(_uid: string): Promise<void> {
-  return;
 }
 
 export function createApp(): Express {
@@ -89,6 +84,10 @@ export function createApp(): Express {
   // Authenticated user-facing routes
   app.use('/api', meRouter);
 
+  // Purchase verification — turns a Google Play purchase token into a
+  // Firestore entitlement. The client is never trusted to decide this.
+  app.use('/api', purchaseRouter);
+
   // Vision route with deps wired. Entitlement reads through the
   // entitlements service (FREE_PREMIUM_TESTING_* env vars for beta
   // testers; Firestore-backed subscriptions will replace later).
@@ -96,7 +95,7 @@ export function createApp(): Express {
   const visionRouter = createVisionRouter({
     provider,
     isPremium: makeIsPremiumClosure(),
-    decrementQuota: stubDecrementQuota,
+    decrementQuota,
   });
   app.use('/api', visionRouter);
 

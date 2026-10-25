@@ -2,10 +2,9 @@
  * SubscriptionPanel — manages subscription state visible to the user.
  *
  * Phase 1: read-only. Lists current entitlement state and the available
- * product (which is a stub in Phase 1 — billingClient returns "Phase 3
- * pending" errors).
+ * product (a one-time HK$38 lifetime purchase).
  *
- * Phase 3 wires:
+ * The billing client:
  *   - launchPurchaseFlow → calls native Billing flow → backend verifies
  *     purchase token → Entitlement.refresh() picks up new state
  *   - restorePurchases → re-sync on fresh install
@@ -14,10 +13,10 @@
  */
 
 import { useEffect, useState } from 'react';
-import { billingClient, type BillingProduct } from '../lib/billingClient';
+import { billingClient, PRODUCT_ID, type BillingProduct } from '../lib/billingClient';
 import type { Entitlements } from '../types/api';
 
-const PRODUCT_IDS = ['premium_monthly'];
+const PRODUCT_IDS = [PRODUCT_ID];
 
 export interface SubscriptionPanelProps {
   entitlements: Entitlements;
@@ -75,7 +74,9 @@ export function SubscriptionPanel({ entitlements, onUpgrade, onRefresh }: Subscr
           </span>
           {entitlements.subscription && (
             <span className="text-xs text-emerald-700">
-              到期 {new Date(entitlements.subscription.expiresAt).toLocaleDateString('zh-HK')}
+              {entitlements.subscription.lifetime
+                ? '永久有效'
+                : `到期 ${new Date(entitlements.subscription.expiresAt ?? 0).toLocaleDateString('zh-HK')}`}
             </span>
           )}
         </div>
@@ -85,10 +86,17 @@ export function SubscriptionPanel({ entitlements, onUpgrade, onRefresh }: Subscr
         <div className="bg-white border-2 border-emerald-300 rounded-2xl p-4 space-y-3">
           <h4 className="font-black text-emerald-950 text-base">升級至 PRO</h4>
           <ul className="text-sm text-emerald-900 space-y-1 list-disc pl-4">
-            <li>AI 自動識別麻雀牌面（每月 ~200 次）</li>
+            <li>AI 自動識別麻雀牌面（2,000 次）</li>
             <li>完全隱藏廣告</li>
             <li>優先支援新功能</li>
+            <li>一次過付費，唔會自動續費</li>
           </ul>
+          {products[0]?.priceFormatted && (
+            <p className="text-2xl font-black text-emerald-900 text-center">
+              {products[0].priceFormatted}
+              <span className="text-sm font-bold text-emerald-700 ml-1">一次過</span>
+            </p>
+          )}
           <button
             type="button"
             onClick={onUpgrade}

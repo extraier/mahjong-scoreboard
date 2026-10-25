@@ -1,22 +1,26 @@
 /**
- * UpgradeModal — Phase 1 stub upgrade dialog.
+ * UpgradeModal — upgrade dialog.
  *
  * Triggered by:
  *   - <PremiumGate onUpgrade=...> when free user taps an AI affordance
  *   - <SubscriptionPanel onUpgrade=...> from settings tab
  *
- * Phase 1 confirm action: tells the mock-server to flip to premium and
- * refreshes entitlements so the rest of the app reacts. Phase 3 replaces
- * this with a real launchPurchaseFlow(BillingClient.launchPurchaseFlow)
- * and shows a server-verified success state.
+ * Pricing: ONE-TIME HK$38 (lifetime), not a subscription. The price text
+ * here is a PLACEHOLDER — the real localized price comes from Google Play
+ * (see billingClient.listProducts). When Play billing is wired, the
+ * modal should render the Play-provided title + price instead of a
+ * hard-coded amount, so the price shown always matches what the user
+ * will actually be charged.
  */
 
 interface UpgradeModalProps {
   onClose: () => void;
   onConfirm: () => void;
+  /** True while the purchase flow is running. */
+  busy?: boolean;
 }
 
-export function UpgradeModal({ onClose, onConfirm }: UpgradeModalProps) {
+export function UpgradeModal({ onClose, onConfirm, busy = false }: UpgradeModalProps) {
   return (
     <div
       role="dialog"
@@ -37,7 +41,7 @@ export function UpgradeModal({ onClose, onConfirm }: UpgradeModalProps) {
             升級至 PRO ✨
           </h2>
           <p className="text-sm opacity-90 mt-2 leading-relaxed">
-            解鎖全部 AI 自動識別功能，並完全隱藏廣告。支援隨時取消。
+            解鎖全部 AI 自動識別功能，並完全隱藏廣告。一次過付費，永久使用。
           </p>
         </div>
 
@@ -45,7 +49,7 @@ export function UpgradeModal({ onClose, onConfirm }: UpgradeModalProps) {
           <ul className="text-sm text-slate-700 space-y-2">
             <li className="flex gap-2">
               <span className="text-emerald-600 font-black">✓</span>
-              AI 自動識別麻雀牌面（每月約 200 次）
+              AI 自動識別麻雀牌面（2,000 次）
             </li>
             <li className="flex gap-2">
               <span className="text-emerald-600 font-black">✓</span>
@@ -57,24 +61,25 @@ export function UpgradeModal({ onClose, onConfirm }: UpgradeModalProps) {
             </li>
             <li className="flex gap-2">
               <span className="text-emerald-600 font-black">✓</span>
-              隨時喺 Google Play 取消訂閱
+              一次過付費，冇月費，唔會自動續費
             </li>
           </ul>
 
           <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-3 text-center">
             <span className="text-2xl font-black text-emerald-900">HK$38</span>
-            <span className="text-sm text-emerald-700 ml-1">/ 月</span>
+            <span className="text-sm text-emerald-700 ml-1">一次過</span>
             <p className="text-[10px] text-emerald-600 mt-1">
-              試用 7 日後先收費 · 隨時取消
+              永久使用 · 唔會自動續費
             </p>
           </div>
 
           <button
             type="button"
             onClick={onConfirm}
-            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-black shadow-md active:scale-95 transition-transform"
+            disabled={busy}
+            className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-black shadow-md active:scale-95 transition-transform disabled:opacity-60 disabled:cursor-wait"
           >
-            立即升級
+            {busy ? '處理中…' : '立即升級'}
           </button>
           <button
             type="button"

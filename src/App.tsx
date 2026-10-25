@@ -6,6 +6,7 @@ import { AiCameraPanel } from './components/AiCameraPanel'
 import { SubscriptionPanel } from './components/SubscriptionPanel'
 import { UpgradeModal } from './components/UpgradeModal'
 import { AuthPanel } from './components/AuthPanel'
+import { billingClient, PRODUCT_ID } from './lib/billingClient'
 
 declare global {
   interface Window {
@@ -302,6 +303,29 @@ const App = () => {
     const [selectedFlowers, setSelectedFlowers] = useState<TileId[]>([]);
     const fileInputRef = useRef<HTMLInputElement | null>(null);
     const [openSection, setOpenSection] = useState<'mode' | 'players' | 'ai' | 'danger' | null>('mode');
+
+    // Purchase flow. The client hands the purchase token to the server,
+    // which asks Google Play whether the purchase is real. Only after the
+    // server confirms does the app treat the user as premium.
+    const [purchaseBusy, setPurchaseBusy] = useState(false);
+    const [purchaseError, setPurchaseError] = useState<string | null>(null);
+    const [purchaseNotice, setPurchaseNotice] = useState<string | null>(null);
+
+    const handleUpgrade = async () => {
+        setPurchaseError(null);
+        setPurchaseNotice(null);
+        setPurchaseBusy(true);
+        const res = await billingClient.launchPurchaseFlow(PRODUCT_ID);
+        setPurchaseBusy(false);
+        if (!res.success) {
+            // A cancellation is not an error worth a red banner.
+            if (res.error && !/取消/.test(res.error)) setPurchaseError(res.error);
+            return;
+        }
+        setUpgradeModalOpen(false);
+        setPurchaseNotice('付款完成，PRO 會員已開通！');
+        await entitlements.refresh();
+    };
     const toggleSection = (s: 'mode' | 'players' | 'ai' | 'danger') => setOpenSection(openSection === s ? null : s);
     
     const [mode, setMode] = useState<'select' | 'camera'>('select');
@@ -868,19 +892,30 @@ const App = () => {
                 </div>
             </main>
 
+            {purchaseError && (
+                <div className="fixed bottom-24 left-4 right-4 z-40 mx-auto max-w-sm bg-red-50 border-2 border-red-300 rounded-2xl p-3 shadow-lg">
+                    <p className="text-xs font-bold text-red-800">{purchaseError}</p>
+                    <button
+                        type="button"
+                        onClick={() => setPurchaseError(null)}
+                        className="mt-1 text-[10px] font-bold text-red-600 underline"
+                    >
+                        關閉
+                    </button>
+                </div>
+            )}
+
+            {purchaseNotice && !purchaseError && (
+                <div className="fixed bottom-24 left-4 right-4 z-40 mx-auto max-w-sm bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-3 shadow-lg">
+                    <p className="text-xs font-bold text-emerald-800">{purchaseNotice}</p>
+                </div>
+            )}
+
             {upgradeModalOpen && (
                 <UpgradeModal
                     onClose={() => setUpgradeModalOpen(false)}
-                    onConfirm={() => {
-                        // Phase 1 stub: instead of opening Google Play Billing,
-                        // flip mock-server to premium so the developer can see
-                        // the rest of the premium flow. Phase 3 will replace
-                        // this with the real launchPurchaseFlow call.
-                        setUpgradeModalOpen(false);
-                        fetch('http://localhost:8787/api/dev/premium-on', { method: 'POST' })
-                          .then(() => entitlements.refresh())
-                          .catch(() => { /* dev only — silent if mock isn't running */ });
-                    }}
+                    onConfirm={handleUpgrade}
+                    busy={purchaseBusy}
                 />
             )}
 

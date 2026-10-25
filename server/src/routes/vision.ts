@@ -46,7 +46,12 @@ export interface VisionRouterDeps {
   /** Selected provider (stub or minimax). Boot-time decision. */
   provider: VisionProvider;
   /** Reads the user's current entitlement state. Pre-quota check. */
-  isPremium: (uid: string) => Promise<{ isPremium: boolean; canUseAi: boolean; remainingAiUses: number }>;
+  isPremium: (uid: string, email?: string | null) => Promise<{
+    isPremium: boolean;
+    canUseAi: boolean;
+    /** null = unlimited (lifetime plan). */
+    remainingAiUses: number | null;
+  }>;
   /** Decrement quota atomically on successful vision call. */
   decrementQuota: (uid: string) => Promise<void>;
 }
@@ -68,7 +73,7 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       const uid = req.auth.uid;
 
       // Step 2: entitlement gate
-      const ent = await deps.isPremium(uid);
+      const ent = await deps.isPremium(uid, req.auth.email ?? null);
       if (!ent.isPremium) {
         throw new ApiError('AI_PREMIUM_REQUIRED', 'AI 識別需要 PRO 會員');
       }
@@ -77,8 +82,9 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       }
 
       // Step 3: explicit quota check (defense-in-depth in case isPremium
-      // is stale; real quota counter lives in Firestore in commit 6)
-      if (ent.remainingAiUses <= 0) {
+      // is stale). remainingAiUses === null means UNLIMITED (lifetime
+      // plan) — only a finite count can be exhausted.
+      if (ent.remainingAiUses !== null && ent.remainingAiUses <= 0) {
         throw new ApiError('QUOTA_EXCEEDED', '本月用量已用完', { retryAfterDays: null });
       }
 
@@ -138,7 +144,7 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
         }),
       );
 
-      const remaining = Math.max(0, ent.remainingAiUses - 1);
+      const remaining = ent.remainingAiUses === null ? null : Math.max(0, ent.remainingAiUses - 1);
       const response: VisionAnalyzeResponse = {
         requestId,
         provider: deps.provider.name,
@@ -175,7 +181,7 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       const uid = req.auth.uid;
 
       // Premium gate — free users don't have an AI call history to correct.
-      const ent = await deps.isPremium(uid);
+      const ent = await deps.isPremium(uid, req.auth.email ?? null);
       if (!ent.isPremium) {
         throw new ApiError('AI_PREMIUM_REQUIRED', '校正 AI 識別結果需要 PRO 會員');
       }
