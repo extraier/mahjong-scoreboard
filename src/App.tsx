@@ -5,6 +5,7 @@ import { AdBanner } from './components/AdBanner'
 import { AiCameraPanel } from './components/AiCameraPanel'
 import { SubscriptionPanel } from './components/SubscriptionPanel'
 import { UpgradeModal } from './components/UpgradeModal'
+import { AuthPanel } from './components/AuthPanel'
 
 declare global {
   interface Window {
@@ -823,6 +824,10 @@ const App = () => {
                                 })}
                             </div>
                             <p className="text-[8px] text-slate-400 mt-3 font-bold leading-relaxed">* 必須保持 4 位玩家在「場上」。結算時可選擇出沖給場外玩家。<br/>* 點擊 ✏️ 圖示即可修改玩家真實姓名。</p>
+                        </div>
+
+                        <div>
+                            <AuthPanel onSignedIn={() => entitlements.refresh()} />
                         </div>
 
                         <div>

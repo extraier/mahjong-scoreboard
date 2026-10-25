@@ -20,8 +20,13 @@ import type { ApiError, ApiErrorCode } from '../types/api';
 
 export interface ApiClientConfig {
   baseUrl: string;
-  /** Bearer token getter; if returns null, no auth header is sent */
-  getAuthToken?: () => string | null;
+  /**
+   * Bearer token getter; if returns null, no auth header is sent.
+   *
+   * May be async — Firebase's `getIdToken()` returns a Promise. The client
+   * awaits the result before building the request headers.
+   */
+  getAuthToken?: () => string | null | Promise<string | null>;
   /** Default timeout in ms; override per request */
   defaultTimeoutMs?: number;
 }
@@ -133,7 +138,7 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
     headers['Content-Type'] = 'application/json';
   }
 
-  const token = config.getAuthToken?.();
+  const token = await config.getAuthToken?.();
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
   const controller = new AbortController();

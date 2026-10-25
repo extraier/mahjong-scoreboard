@@ -94,3 +94,7 @@ server/data/real-tiles-v12-raesakace/
 
 # HuggingFace cache (model weights downloaded for training)
 server/.cache/
+
+# Firebase web client config (contains apiKey) — keep out of git
+webapp-config.json
+oauth-web-client.json

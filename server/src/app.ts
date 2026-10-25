@@ -11,6 +11,7 @@ import { toResponseBody } from './errors.js';
 import { log } from './log.js';
 import { config } from './config.js';
 import { healthzRouter } from './routes/healthz.js';
+import { accountDeletionRouter } from './routes/accountDeletion.js';
 import { meRouter } from './routes/me.js';
 import { createVisionRouter } from './routes/vision.js';
 import { createStubProvider } from './providers/stubProvider.js';
@@ -79,6 +80,11 @@ export function createApp(): Express {
 
   // Public routes
   app.use('/api', healthzRouter);
+
+  // Account deletion — public (no auth). A user who has lost access to
+  // their account must still be able to request data deletion, which is
+  // what Google Play's data-deletion requirement asks for.
+  app.use('/api', accountDeletionRouter);
 
   // Authenticated user-facing routes
   app.use('/api', meRouter);

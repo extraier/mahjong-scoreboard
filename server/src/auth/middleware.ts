@@ -21,6 +21,7 @@
 import type { NextFunction, Request, Response } from 'express';
 import { getAuth } from 'firebase-admin/auth';
 import { ApiError } from '../errors.js';
+import { getFirebase } from '../firebase.js';
 
 export interface AuthContext {
   uid: string;
@@ -63,7 +64,12 @@ export async function requireAuth(
   }
 
   try {
-    const decoded = await getAuth().verifyIdToken(token, true /* checkRevoked */);
+    // TRAP: must pass the initialized app to getAuth(). Calling bare
+    // getAuth() relies on a "default app" that only exists if
+    // initializeApp() ran in this process — on Vercel the default app is
+    // never created, so verification fails with
+    // "The default Firebase app does not exist".
+    const decoded = await getAuth(getFirebase().app).verifyIdToken(token, true /* checkRevoked */);
     req.auth = {
       uid: decoded.uid,
       email: decoded.email,
@@ -88,7 +94,7 @@ export async function optionalAuth(
   const token = extractBearer(req);
   if (!token) return next();
   try {
-    const decoded = await getAuth().verifyIdToken(token, true);
+    const decoded = await getAuth(getFirebase().app).verifyIdToken(token, true);
     req.auth = {
       uid: decoded.uid,
       email: decoded.email,

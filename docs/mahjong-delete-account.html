@@ -85,6 +85,11 @@
       <button type="submit" id="submitBtn" disabled>提交刪除要求</button>
     </form>
     <div class="status" id="status"></div>
+    <p style="margin-top:14px">
+      <a id="mailFallback" href="#" style="display:none;background:#b91c1c;color:#fff;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:700">
+        用電郵通知我哋
+      </a>
+    </p>
   </div>
 
   <h2>我哋會點樣處理</h2>
@@ -176,11 +181,53 @@
       status.textContent = '請剔晒兩個確認方格先可以提交。';
       return;
     }
-    status.className = 'status ok';
-    status.textContent = '已收到你嘅刪除要求。我哋會喺 30 日內處理，並且用電郵通知你結果。有任何問題可以直接回覆嗰封電郵。';
+
+    // Actually submit. Previously this handler only updated the message
+    // locally, so the request was never sent anywhere and the user's
+    // deletion request was silently lost.
+    var addr = email.value.trim();
+    status.className = 'status';
+    status.textContent = '提交中…';
     btn.disabled = true;
     btn.classList.remove('ready');
-    btn.textContent = '已提交';
+    btn.textContent = '提交中…';
+
+    // Try the app API first. If it is unreachable, fall back to a mailto:
+    // link so the user is never left with a dead end.
+    var API_URL = 'https://mahjong-scoreboard.vercel.app/api/account/deletion';
+    fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: addr,
+        note: '由網頁表單提交',
+        source: 'privacy-page'
+      })
+    }).then(function (r) {
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return r.json();
+    }).then(function () {
+      status.className = 'status ok';
+      status.textContent = '已收到你嘅刪除要求。我哋會喺 30 日內處理，並且用電郵通知你結果。有任何問題可以直接回覆嗰封電郵。';
+      btn.textContent = '已提交';
+    }).catch(function () {
+      // API unreachable — offer the mailto fallback rather than claiming success.
+      status.className = 'status err';
+      status.textContent = '線上提交唔到，請撳下面按鈕用電郵通知我哋。';
+      var mail = document.getElementById('mailFallback');
+      if (mail) {
+        mail.href = 'mailto:roger-lau@outlook.com?subject=' +
+          encodeURIComponent('要求刪除帳戶資料 — ' + addr) +
+          '&body=' + encodeURIComponent(
+            '你好，\n\n我想要求刪除同以下電郵地址相關嘅所有帳戶資料：\n' + addr +
+            '\n\n（此電郵由雀神器網頁表單自動產生。）\n\n多謝。'
+          );
+        mail.style.display = 'inline-block';
+      }
+      btn.disabled = false;
+      btn.classList.add('ready');
+      btn.textContent = '提交刪除要求';
+    });
   });
 })();
 </script>

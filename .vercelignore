@@ -1,0 +1,32 @@
+# Vercel upload ignore list.
+#
+# The repo contains very large trees that must never be uploaded to Vercel:
+#   server/.mlvenv  — a Python venv with PyTorch (~8k files)
+#   models/         — training images and datasets (thousands of files)
+#   android/        — the Capacitor native project (built separately)
+#
+# `.vercelignore` is applied on top of `.gitignore`; both are needed.
+
+node_modules
+server/node_modules
+server/.mlvenv
+server/.venv
+server/venv
+models
+android
+ios
+dist
+.git
+.github
+.env.local
+webapp-config.json
+oauth-web-client.json
+*.log
+.DS_Store
+**/.firebase
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+coverage
+.vscode
+.idea

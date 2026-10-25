@@ -1,0 +1,66 @@
+rules_version = '2';
+
+// Firestore security rules for the 麻雀神器 (mahjong-scoreboard) app.
+//
+// TRAP: every rule below uses `request.auth` — never `auth`. `auth` is
+// null for unauthenticated callers and any access to it throws at runtime,
+// which surfaces as a generic "insufficient permissions" error instead of
+// a clean deny.
+//
+// Data model:
+//   users/{uid}          — profile + entitlement mirror (server-written)
+//   deletion_requests/*  — public data-deletion requests (server-written)
+//   entitlements/{uid}   — server-written entitlement records
+//
+// The client NEVER writes to these collections directly. The server
+// (firebase-admin) bypasses these rules entirely, so they exist to make
+// sure a compromised client cannot tamper with entitlements or forge a
+// deletion request.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ---- Users -------------------------------------------------------
+    // A user may read their own profile. Writes are server-only.
+    match /users/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // ---- Entitlements ------------------------------------------------
+    // Server-only. The client reads entitlements through
+    // GET /api/me/entitlements, never straight from Firestore.
+    match /entitlements/{uid} {
+      allow read, write: if false;
+    }
+
+    // ---- Account deletion requests -----------------------------------
+    // Public write (no auth) because a user who has lost access to their
+    // account must still be able to request deletion — that is exactly
+    // what Google Play's data-deletion requirement asks for.
+    //
+    // Field constraints keep a rogue client from writing junk:
+    //   - email must be a string and look like an email
+    //   - note must be a string (or absent)
+    //   - status/request_id/requested_at are server-managed
+    match /deletion_requests/{requestId} {
+      allow create: if request.resource.data.keys().hasOnly([
+                       'request_id', 'email', 'note', 'source', 'status', 'requested_at'
+                     ])
+                    && request.resource.data.email is string
+                    && request.resource.data.email.size() <= 320
+                    && request.resource.data.email.matches('.*@.*\\..*')
+                    && (!('note' in request.resource.data)
+                        || (request.resource.data.note is string
+                            && request.resource.data.note.size() <= 2000))
+                    && (!('source' in request.resource.data)
+                        || (request.resource.data.source is string
+                            && request.resource.data.source.size() <= 100));
+      allow read, update, delete: if false;
+    }
+
+    // ---- Default deny ------------------------------------------------
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

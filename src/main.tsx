@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App.tsx'
 import { configureApiClient } from './lib/apiClient'
+import { getAuthToken } from './lib/authClient'
 import './index.css'
 
 // Configure apiClient base URL BEFORE React mounts.
@@ -9,6 +10,11 @@ import './index.css'
 // Production: omit VITE_API_BASE_URL → fetch goes to same-origin.
 configureApiClient({
   baseUrl: import.meta.env.VITE_API_BASE_URL || '',
+  // Firebase ID token getter. The apiClient awaits this per request, so a
+  // refreshed token is always used without extra plumbing. When Firebase
+  // env vars are absent this returns null and requests go out unauthenticated
+  // (the dice/calculator/scoring features do not need auth).
+  getAuthToken,
 });
 // ------------------------------------------------------------
 // On iOS Safari opened as a REGULAR TAB (not a PWA), the
