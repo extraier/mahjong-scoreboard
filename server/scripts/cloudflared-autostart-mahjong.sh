@@ -11,6 +11,8 @@
 set -uo pipefail
 
 TUNNEL_NAME="mahjong-local-vision"
+# Full command line of the connector this watchdog owns (`pgrep -f` / `pkill -f`).
+TUNNEL_PROC="cloudflared.*tunnel run ${TUNNEL_NAME}"
 CFG="$HOME/.cloudflared/config.yml"
 LOG="$HOME/.cloudflared/mahjong-local-vision.log"
 CFD="/opt/homebrew/bin/cloudflared"
@@ -39,8 +41,7 @@ if ! mkdir "$LOCK_DIR" 2>/dev/null; then
 fi
 trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 
-# Two-tier health: the process exists AND it has a live connection to the
-# Cloudflare edge.
+# Liveness is cloudflared's own /metrics gauge, not the process table.
 #
 # Hermes 2026-10-27 — this used to check "log modified in the last 5 min"
 # plus "Registered tunnel connection" in the last 50 lines. Both halves
@@ -56,18 +57,36 @@ trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
 # log showed "FAILED to start" every time even while traffic was being
 # served fine.
 #
-# THE FIX: probe cloudflared's own /metrics endpoint. The gauge
 # `cloudflared_tunnel_ha_connections` is the live count of edge
 # connections. 0 = genuinely down, >0 = genuinely healthy. It does not
 # care when the log was last written.
+#
+# Do not decide that with `ps -ef | grep -v grep | grep -q ...`. `grep -q`
+# exits on the first match and closes the pipe, so the upstream `ps`/`grep`
+# dies with SIGPIPE (exit 141). Under `set -o pipefail` that 141 is the
+# pipeline status, and a running tunnel can look absent. This job then starts
+# a second cloudflared, fails to bind the metrics port ("address already
+# in use"), and exits 1 while the original connector is healthy. Presence
+# checks use `pgrep -f` instead (`/usr/bin/pgrep`, on launchd's default
+# PATH). The gauge is read only after curl has finished, so a `grep -m1`
+# in that pipeline cannot SIGPIPE the scrape the same way.
+cloudflared_running() {
+  pgrep -f "$TUNNEL_PROC" >/dev/null 2>&1
+}
+
+cloudflared_ha_connections() {
+  local body
+  body=$(curl -s --max-time 5 "$METRICS_URL" 2>/dev/null) || return 1
+  awk '
+    $1 == "cloudflared_tunnel_ha_connections" && !seen { value = $2; seen = 1 }
+    END { if (!seen) exit 1; print value }
+  ' <<<"$body"
+}
+
 cloudflared_healthy() {
-  ps -ef | grep -v grep | grep -q "[c]loudflared.*tunnel run ${TUNNEL_NAME}" || return 1
   local conns
-  conns=$(curl -s --max-time 5 "$METRICS_URL" 2>/dev/null \
-          | grep -m1 '^cloudflared_tunnel_ha_connections ' \
-          | awk '{print $2}')
-  [ -n "$conns" ] && [ "$conns" -gt 0 ] 2>/dev/null || return 1
-  return 0
+  conns=$(cloudflared_ha_connections) || return 1
+  [ -n "$conns" ] && [ "$conns" -gt 0 ] 2>/dev/null
 }
 
 if cloudflared_healthy; then
@@ -75,10 +94,10 @@ if cloudflared_healthy; then
   exit 0
 fi
 
-# Zombied? Kill before restart.
-if ps -ef | grep -v grep | grep -q "[c]loudflared.*tunnel run ${TUNNEL_NAME}"; then
+# Zombied? Kill before restart so the new process can bind the metrics port.
+if cloudflared_running; then
   log "cloudflared running but unhealthy, killing"
-  pkill -f "cloudflared.*tunnel run ${TUNNEL_NAME}" 2>/dev/null
+  pkill -f "$TUNNEL_PROC" 2>/dev/null || true
   sleep 3
 fi
 
@@ -101,7 +120,8 @@ disown "$CFPID" 2>/dev/null || true
 for i in $(seq 1 15); do
   sleep 2
   if cloudflared_healthy; then
-    PID=$(ps -ef | grep -v grep | grep "cloudflared.*tunnel run ${TUNNEL_NAME}" | awk '{print $2}' | head -1)
+    PID=$(pgrep -of "$TUNNEL_PROC" 2>/dev/null || true)
+    [ -n "$PID" ] || PID=$CFPID
     log "Started OK (PID $PID, registered after $((i * 2))s)"
     exit 0
   fi
