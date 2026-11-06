@@ -10,11 +10,15 @@ This script:
   3. Emits legacy launcher icons (ic_launcher.png) at all 5 mipmap densities
   4. Emits round variants (ic_launcher_round.png) with a circular crop
   5. Emits adaptive-icon foregrounds (ic_launcher_foreground.png) at 108dp
-     scale with the circular badge filling the whole canvas. Circular and
-     squircle OEM masks then show an edge-to-edge emblem. (An inset safe
-     zone left a ring and looked off-centre.)
-  6. Emits splash.webp at 9 densities x 2 orientations, logo centered on
-     the brand emerald-950 background
+     with the circular badge at 72/108 — the diameter of the circular OEM
+     mask. The gold rim then sits on the mask edge (full-bleed clips the
+     rim; a deep inset leaves a background ring).
+  6. Emits splash.webp at 9 densities x 2 orientations, plus an unqualified
+     fallback, emblem centered on the brand emerald-950 background at 28%
+     of the shorter edge
+  7. Emits drawable-nodpi/splash_icon.png for the Android 12+ splash icon.
+     Only the center 2/3 of that slot is drawn, so the emblem is padded
+     to ~100dp instead of filling the masked circle.
 
 Usage:
   python3 scripts/generate_android_icons.py <source-image> [output-root]
@@ -52,6 +56,26 @@ SPLASH_LANDSCAPE = [
 
 BRAND_BG = (6, 78, 59)  # #064e3b emerald-950, matches capacitor.config.ts
 SPLASH_BG = (6, 78, 59)
+
+# Circular launcher masks reveal the center 72dp of the 108dp foreground.
+# 60/108 sat inside the keyline and left a ring; 108/108 (1.0.7) was
+# clipped by the mask, so the gold rim was cut and the emblem looked zoomed.
+ADAPTIVE_LOGO_NUMER = 72
+ADAPTIVE_LOGO_DENOM = 108
+
+# Splash bitmap: fraction of the shorter edge. 0.42 of the image width was
+# ~134dp on portrait phones and, in landscape, 0.42 of the long edge.
+# 0.28 of the shorter edge is a typical centered mark (~90dp on a 320dp-wide
+# phone, ~100dp on a 360dp-wide one) in both orientations.
+SPLASH_LOGO_OF_SHORT_SIDE = 0.28
+
+# Android 12+ splash icon slot is 288dp and only the center 192dp circle is
+# drawn (outer third masked, same idea as adaptive icons). 100/288 lands the
+# emblem at ~100dp — inside that circle, and in line with the bitmap above
+# on a typical phone — instead of a clipped ~192dp disc.
+SPLASH_ICON_PX = 1152  # 288dp at xxxhdpi; nodpi so the system does not prescale
+SPLASH_ICON_LOGO_NUMER = 100
+SPLASH_ICON_LOGO_DENOM = 288
 
 
 def detect_badge_bounds(img: Image.Image) -> tuple[int, int, int, int]:
@@ -209,15 +233,15 @@ def make_round(badge: Image.Image, px: int) -> Image.Image:
 
 
 def make_adaptive_foreground(badge: Image.Image, px: int) -> Image.Image:
-    """Adaptive-icon foreground: circular badge fills the 108dp canvas.
+    """Adaptive-icon foreground: circular badge at the 72dp mask diameter.
 
-    The source emblem is already a circle. Sizing it to the full canvas
-    (logo_px == px) and centring it lets circular and squircle OEM masks
-    show an edge-to-edge badge. The previous 60/108 inset left a ring of
-    background and read as off-centre under those masks.
+    The canvas is 108dp. Circular OEM masks show the center 72dp and clip
+    the rest, so a badge at 72/108 fills the launcher circle: gold rim on
+    the mask edge, no empty ring. Full-bleed (logo_px == px) is cropped by
+    that mask. Every density we emit divides evenly (108, 162, 216, 324, 432).
     """
     canvas = Image.new("RGBA", (px, px), (0, 0, 0, 0))
-    logo_px = px
+    logo_px = px * ADAPTIVE_LOGO_NUMER // ADAPTIVE_LOGO_DENOM
     logo = badge.resize((logo_px, logo_px), Image.LANCZOS)
     offset = (px - logo_px) // 2
     canvas.paste(logo, (offset, offset), logo)
@@ -225,7 +249,12 @@ def make_adaptive_foreground(badge: Image.Image, px: int) -> Image.Image:
 
 
 def make_splash(badge: Image.Image, width: int, landscape: bool) -> Image.Image:
-    """Splash screen — brand green background, emblem centred."""
+    """Splash screen — brand green background, emblem centred.
+
+    The emblem is SPLASH_LOGO_OF_SHORT_SIDE of the shorter edge so portrait
+    and landscape keep the same visual weight. It used to be 0.42 of the
+    image width, which crowded portrait and overflowed landscape.
+    """
     if landscape:
         height = int(width * 0.5625)  # 16:9
     else:
@@ -233,12 +262,28 @@ def make_splash(badge: Image.Image, width: int, landscape: bool) -> Image.Image:
 
     canvas = Image.new("RGB", (width, height), SPLASH_BG)
 
-    logo_px = int(width * 0.42)
+    logo_px = int(min(width, height) * SPLASH_LOGO_OF_SHORT_SIDE)
     logo = badge.resize((logo_px, logo_px), Image.LANCZOS)
     # Composite preserving the emblem's alpha over the green background
     layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
     layer.paste(logo, ((width - logo_px) // 2, (height - logo_px) // 2), logo)
     return Image.alpha_composite(canvas.convert("RGBA"), layer).convert("RGB")
+
+
+def make_splash_icon(badge: Image.Image, px: int) -> Image.Image:
+    """Android 12+ splash icon: emblem inside the unmasked center circle.
+
+    The platform scales this drawable to a 288dp slot and draws only the
+    center 192dp (outer third masked). The emblem is 100/288 of the canvas
+    (~100dp on screen) so the rim stays inside that circle. Transparent
+    padding lets the splash background color show around it.
+    """
+    canvas = Image.new("RGBA", (px, px), (0, 0, 0, 0))
+    logo_px = px * SPLASH_ICON_LOGO_NUMER // SPLASH_ICON_LOGO_DENOM
+    logo = badge.resize((logo_px, logo_px), Image.LANCZOS)
+    offset = (px - logo_px) // 2
+    canvas.paste(logo, (offset, offset), logo)
+    return canvas
 
 
 def save_web_image(img: Image.Image, path: Path, webp: bool = False) -> None:
@@ -303,6 +348,23 @@ def main() -> None:
         folder.mkdir(parents=True, exist_ok=True)
         save_web_image(make_splash(badge, width, landscape=True), folder / "splash.webp", webp=True)
         print(f"  drawable-{suffix}: splash.webp @{width}px landscape")
+
+    # Unqualified fallback. Lint (MissingDefaultResource) requires drawable/splash
+    # when the theme references @drawable/splash; keep it the same artwork.
+    fallback = make_splash(badge, 720, landscape=False)
+    save_web_image(fallback, res_root / "drawable" / "splash.webp", webp=True)
+    print(f"  drawable/splash.webp (default fallback) {fallback.size[0]}×{fallback.size[1]}")
+
+    # Android 12+ splash icon. nodpi: one sharp bitmap, scaled by the system
+    # into the 288dp icon slot (only the center 192dp circle is visible).
+    icon_dir = res_root / "drawable-nodpi"
+    icon_dir.mkdir(parents=True, exist_ok=True)
+    splash_icon = make_splash_icon(badge, SPLASH_ICON_PX)
+    splash_icon.save(icon_dir / "splash_icon.png", "PNG", optimize=True)
+    print(
+        f"  drawable-nodpi/splash_icon.png @{SPLASH_ICON_PX}px "
+        f"(emblem {SPLASH_ICON_PX * SPLASH_ICON_LOGO_NUMER // SPLASH_ICON_LOGO_DENOM}px)"
+    )
 
     # 3. Web favicon + PWA icons (Play Console wants 512×512 for the store listing)
     # res_root = <project>/android/app/src/main/res  → 5 parents up = <project>
