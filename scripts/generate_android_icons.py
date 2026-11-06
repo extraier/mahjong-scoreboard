@@ -10,9 +10,10 @@ This script:
   3. Emits legacy launcher icons (ic_launcher.png) at all 5 mipmap densities
   4. Emits round variants (ic_launcher_round.png) with a circular crop
   5. Emits adaptive-icon foregrounds (ic_launcher_foreground.png) at 108dp
-     scale with the badge inside the 66dp safe zone (Android adaptive
-     icons get masked to various shapes, so the logo must be inset)
-  6. Emits splash.png at 9 densities x 2 orientations, logo centered on
+     scale with the circular badge filling the whole canvas. Circular and
+     squircle OEM masks then show an edge-to-edge emblem. (An inset safe
+     zone left a ring and looked off-centre.)
+  6. Emits splash.webp at 9 densities x 2 orientations, logo centered on
      the brand emerald-950 background
 
 Usage:
@@ -54,43 +55,115 @@ SPLASH_BG = (6, 78, 59)
 
 
 def detect_badge_bounds(img: Image.Image) -> tuple[int, int, int, int]:
-    """Find the bounding box of the circular badge.
+    """Return a square crop centred on the circular badge.
 
-    The emblem is a light circular disk on a pale background. We find it by
-    scanning for pixels that differ noticeably from the corner (background)
-    colour, then take the tight bounding box.
+    The emblem is a coloured disk on a pale field. That field is not flat:
+    the source JPEG vignettes toward the bottom-right, and the badge casts
+    a soft gray shadow. Thresholding against one corner colour treats the
+    vignette as content, so the box runs to the image edge and the emblem
+    sits up-left inside the circular mask.
+
+    Measure the border, set the threshold above that spread, and ignore
+    low-saturation pixels (vignette and shadow). The widest content row and
+    the tallest content column are the circle's diameters; the crop is a
+    square about their centre.
     """
     rgb = img.convert("RGB")
     w, h = rgb.size
     px = rgb.load()
 
-    # Background reference = median of the four corners
-    corners = [px[0, 0], px[w - 1, 0], px[0, h - 1], px[w - 1, h - 1]]
-    bg = tuple(sorted(c[i] for c in corners)[2] for i in range(3))
+    border: list[tuple[int, int, int]] = []
+    for x in range(w):
+        border.append(px[x, 0])
+        border.append(px[x, h - 1])
+    for y in range(1, h - 1):
+        border.append(px[0, y])
+        border.append(px[w - 1, y])
 
-    def differs(p, thresh=26):
-        return sum(abs(p[i] - bg[i]) for i in range(3)) > thresh
+    def median_channel(i: int) -> int:
+        vals = sorted(p[i] for p in border)
+        return vals[len(vals) // 2]
 
-    # Column/row profiles of non-background pixels
-    cols = [0] * w
-    rows = [0] * h
-    for y in range(0, h, 2):
-        for x in range(0, w, 2):
-            if differs(px[x, y]):
-                cols[x] += 1
-                rows[y] += 1
+    bg = tuple(median_channel(i) for i in range(3))
 
-    # Ignore sparse noise at the edges
-    col_thresh = max(2, int(h * 0.02))
-    row_thresh = max(2, int(w * 0.02))
-    xs = [x for x in range(w) if cols[x] > col_thresh]
-    ys = [y for y in range(h) if rows[y] > row_thresh]
-    if not xs or not ys:
+    def dist(p: tuple[int, int, int]) -> int:
+        return abs(p[0] - bg[0]) + abs(p[1] - bg[1]) + abs(p[2] - bg[2])
+
+    border_dists = sorted(dist(p) for p in border)
+    p99 = border_dists[min(len(border_dists) - 1, int(len(border_dists) * 0.99))]
+    # Above the vignette (border p99 is ~30 on the master emblem) so a
+    # darker corner cannot stretch the box to the image edge.
+    thresh = max(48, p99 + 16)
+
+    def is_badge(p: tuple[int, int, int]) -> bool:
+        if dist(p) <= thresh:
+            return False
+        # Low chroma is the vignette or the drop shadow, not the badge.
+        return (max(p) - min(p)) > 20
+
+    best_row: tuple[int, int, int] | None = None  # (span, x0, x1)
+    for y in range(h):
+        x0 = -1
+        x1 = -1
+        for x in range(w):
+            if is_badge(px[x, y]):
+                if x0 < 0:
+                    x0 = x
+                x1 = x
+        if x0 >= 0:
+            span = x1 - x0
+            if best_row is None or span > best_row[0]:
+                best_row = (span, x0, x1)
+
+    best_col: tuple[int, int, int] | None = None  # (span, y0, y1)
+    for x in range(w):
+        y0 = -1
+        y1 = -1
+        for y in range(h):
+            if is_badge(px[x, y]):
+                if y0 < 0:
+                    y0 = y
+                y1 = y
+        if y0 >= 0:
+            span = y1 - y0
+            if best_col is None or span > best_col[0]:
+                best_col = (span, y0, y1)
+
+    if best_row is None or best_col is None:
         return (0, 0, w, h)
 
-    x0, x1 = min(xs), max(xs)
-    y0, y1 = min(ys), max(ys)
-    return (x0, y0, x1 + 1, y1 + 1)
+    cx = (best_row[1] + best_row[2]) / 2
+    cy = (best_col[1] + best_col[2]) / 2
+    # Larger diameter so the rim is not clipped on the shorter axis.
+    # One extra pixel keeps the antialiased outer edge inside the crop
+    # without reintroducing a visible pale ring.
+    side = max(best_row[0], best_col[0]) + 1
+    x0 = int(round(cx - side / 2))
+    y0 = int(round(cy - side / 2))
+    x1 = x0 + side
+    y1 = y0 + side
+
+    # Slide the square back into frame instead of clipping one side, which
+    # would shift the emblem again.
+    if x0 < 0:
+        x1 -= x0
+        x0 = 0
+    if y0 < 0:
+        y1 -= y0
+        y0 = 0
+    if x1 > w:
+        shift = x1 - w
+        x0 -= shift
+        x1 -= shift
+    if y1 > h:
+        shift = y1 - h
+        y0 -= shift
+        y1 -= shift
+    x0 = max(0, x0)
+    y0 = max(0, y0)
+    x1 = min(w, x1)
+    y1 = min(h, y1)
+    return (x0, y0, x1, y1)
 
 
 def crop_badge(img: Image.Image) -> Image.Image:
@@ -136,14 +209,15 @@ def make_round(badge: Image.Image, px: int) -> Image.Image:
 
 
 def make_adaptive_foreground(badge: Image.Image, px: int) -> Image.Image:
-    """Adaptive-icon foreground (108dp canvas, logo within the 66dp safe zone).
+    """Adaptive-icon foreground: circular badge fills the 108dp canvas.
 
-    The safe zone is a 66dp circle centred in the 108dp canvas; we inset the
-    badge to 60dp (90% of safe zone) so no part of the emblem gets clipped
-    by the OEM shape mask (circle, squircle, teardrop, etc.).
+    The source emblem is already a circle. Sizing it to the full canvas
+    (logo_px == px) and centring it lets circular and squircle OEM masks
+    show an edge-to-edge badge. The previous 60/108 inset left a ring of
+    background and read as off-centre under those masks.
     """
     canvas = Image.new("RGBA", (px, px), (0, 0, 0, 0))
-    logo_px = int(px * 60 / 108)
+    logo_px = px
     logo = badge.resize((logo_px, logo_px), Image.LANCZOS)
     offset = (px - logo_px) // 2
     canvas.paste(logo, (offset, offset), logo)
@@ -187,17 +261,21 @@ def main() -> None:
         sys.exit(f"usage: {sys.argv[0]} <source-image> [output-root]")
 
     src_path = Path(sys.argv[1]).expanduser()
-    res_root = (
-        Path(sys.argv[2]).expanduser()
-        if len(sys.argv) > 2
-        else Path.home() / "mahjong-scoreboard/android/app/src/main/res"
-    )
+    # Default to this repo's Android res dir so the documented one-arg
+    # invocation writes the assets that ship, not a path under $HOME.
+    default_res = Path(__file__).resolve().parent.parent / "android" / "app" / "src" / "main" / "res"
+    res_root = Path(sys.argv[2]).expanduser() if len(sys.argv) > 2 else default_res
     if not src_path.exists():
         sys.exit(f"source image not found: {src_path}")
 
     src = Image.open(src_path)
     print(f"source: {src_path} ({src.size[0]}×{src.size[1]})")
 
+    box = detect_badge_bounds(src)
+    print(
+        f"badge bounds: ({box[0]}, {box[1]})–({box[2]}, {box[3]}) "
+        f"{box[2] - box[0]}×{box[3] - box[1]}"
+    )
     badge = crop_badge(src)
     print(f"badge cropped to {badge.size[0]}×{badge.size[1]} with circular alpha mask")
 
