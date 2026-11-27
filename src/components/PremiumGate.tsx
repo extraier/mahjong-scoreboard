@@ -32,7 +32,7 @@ export interface PremiumGateProps {
 const DEFAULT_BENEFITS = [
   'AI 自動識別麻雀牌面',
   '完全隱藏廣告',
-  '2,000 次 AI 識別配額',
+  '無限次 AI 識別',
 ];
 
 export function PremiumGate({
@@ -71,7 +71,7 @@ export function PremiumGate({
         {loading ? '載入中…' : ctaLabel}
       </button>
       <p className="text-[10px] text-amber-900/60">
-        付款功能將喺 Phase 3 上線 (Google Play Billing · 信用卡)
+        一次過 HK$38，唔會自動續費。手動計分一直免費。
       </p>
     </div>
   );

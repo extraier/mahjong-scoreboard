@@ -4,16 +4,13 @@
  * Five-step handler. Each step explicitly fails closed:
  *
  *   1. requireAuth (router-level middleware) → 401 if no Bearer
- *   2. Entitlement check (services/entitlements.computeEntitlements) →
- *      403 AI_PREMIUM_REQUIRED if !canUseAi. Spec §8.
- *   3. Quota check (services/usage.remaining) → 429 QUOTA_EXCEEDED.
- *   4. Image pipeline (services/imagePipeline.normalizeUpload) →
- *      400 INVALID_IMAGE or 413 IMAGE_TOO_LARGE.
- *   5. Vision provider (providers/* → selected at boot) →
+ *   2. Image pipeline + form fields. A bad photo never consumes a scan.
+ *   3. Quota. Lifetime / testing bypass the daily bucket. Free users
+ *      reserve one scan, then the provider runs. A provider failure
+ *      refunds the scan (a retake does not cost a use). 429 when none
+ *      remain. If the counter cannot be read, 502 — never fail open.
+ *   4. Vision provider (providers/* → selected at boot) →
  *      502 UPSTREAM / 503 PROVIDER_DISABLED on failure.
- *
- *   On 200: decrement quota, fire-and-forget usage record to Firestore
- *   (commit 5 wires this; today's stub does not persist).
  *
  * Spec §3 compliance: the only outbound HTTP the handler triggers is
  * to the configured provider. The provider is selected at boot from
@@ -32,7 +29,7 @@ import { requireAuth } from '../auth/middleware.js';
 import { ApiError } from '../errors.js';
 import { config } from '../config.js';
 import { normalizeUpload } from '../services/imagePipeline.js';
-import { buildVisionCallRecord, logVisionCall, hashImage } from '../services/visionTelemetry.js';
+import { buildVisionCallRecord, logVisionCall } from '../services/visionTelemetry.js';
 import { recordCorrection, diffTiles } from '../services/corrections.js';
 import type { VisionProvider } from '../providers/visionProvider.js';
 import type {
@@ -41,19 +38,37 @@ import type {
   VisionCorrectRequest,
   VisionCorrectResponse,
 } from '../types.js';
+import type { QuotaView } from '../services/visionQuota.js';
+import { QuotaRejectedError } from '../services/visionQuotaStore.js';
+
+export interface VisionAccess {
+  isPremium: boolean;
+  canUseAi: boolean;
+  /** null = unlimited (lifetime). */
+  remainingAiUses: number | null;
+  /** Lifetime, QA allowlist, and paid finite counters skip the daily bucket. */
+  bypassDailyQuota: boolean;
+  resetAt: string | null;
+  adsRemainingToday: number | null;
+}
+
+export interface DailyQuota {
+  reserve(uid: string): Promise<QuotaView>;
+  refund(uid: string): Promise<QuotaView | void>;
+}
 
 export interface VisionRouterDeps {
   /** Selected provider (stub or minimax). Boot-time decision. */
   provider: VisionProvider;
-  /** Reads the user's current entitlement state. Pre-quota check. */
-  isPremium: (uid: string, email?: string | null) => Promise<{
-    isPremium: boolean;
-    canUseAi: boolean;
-    /** null = unlimited (lifetime plan). */
-    remainingAiUses: number | null;
-  }>;
-  /** Decrement quota atomically on successful vision call. */
+  /** Reads the user's current entitlement state. */
+  getAccess: (uid: string, email?: string | null) => Promise<VisionAccess>;
+  /**
+   * Decrement a paid finite counter after success. No-op for lifetime
+   * (null quota) and for testing accounts that have no entitlement doc.
+   */
   decrementQuota: (uid: string) => Promise<void>;
+  /** Free-tier daily bucket. Unused when getAccess says bypassDailyQuota. */
+  dailyQuota: DailyQuota;
 }
 
 export function createVisionRouter(deps: VisionRouterDeps): Router {
@@ -72,23 +87,9 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
       }
       const uid = req.auth.uid;
 
-      // Step 2: entitlement gate
-      const ent = await deps.isPremium(uid, req.auth.email ?? null);
-      if (!ent.isPremium) {
-        throw new ApiError('AI_PREMIUM_REQUIRED', 'AI 識別需要 PRO 會員');
-      }
-      if (!ent.canUseAi) {
-        throw new ApiError('AI_PREMIUM_REQUIRED', '本月用量已用完');
-      }
-
-      // Step 3: explicit quota check (defense-in-depth in case isPremium
-      // is stale). remainingAiUses === null means UNLIMITED (lifetime
-      // plan) — only a finite count can be exhausted.
-      if (ent.remainingAiUses !== null && ent.remainingAiUses <= 0) {
-        throw new ApiError('QUOTA_EXCEEDED', '本月用量已用完', { retryAfterDays: null });
-      }
-
-      // Step 4: image pipeline (size + magic-byte sniff)
+      // Image + form checks happen before any quota reservation. A failed
+      // photo, a retake of a bad file, or opening the camera (which never
+      // reaches this route) must not consume a scan.
       const file = req.file;
       if (!file) {
         throw new ApiError('BAD_REQUEST', 'multipart "image" field required');
@@ -109,27 +110,71 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
         throw new ApiError('BAD_REQUEST', 'seatWind must be 東/南/西/北');
       }
 
-      // Step 5: provider call. Provider throws ApiError on its own
-      // failure modes (UPSTREAM/PROVIDER_DISABLED/PROVIDER_UNAVAILABLE).
-      const result: MahjongVisionResult = await deps.provider.analyze({
-        imageBytes: normalized.bytes,
-        imageMime: normalized.mime,
-        gameMode,
-        roundWind,
-        seatWind,
-        tilesAlreadyKnown: req.body.tilesAlreadyKnown,
-      });
+      const access = await deps.getAccess(uid, req.auth.email ?? null);
+      let reserved = false;
+      let remainingAfter: number | null = access.remainingAiUses;
 
-      // Decrement quota on success. Fire-and-forget so a quota write
-      // failure doesn't fail the user's already-successful vision call.
-      const decrement = deps.decrementQuota(uid).catch((e) => {
-        // eslint-disable-next-line no-console
-        console.error('[vision] quota decrement failed', e);
-      });
+      if (access.bypassDailyQuota) {
+        if (!access.canUseAi || (access.remainingAiUses !== null && access.remainingAiUses <= 0)) {
+          throw new ApiError('QUOTA_EXCEEDED', 'AI 識別次數已用完', {
+            remainingAiUses: 0,
+            resetAt: access.resetAt,
+            adsRemainingToday: null,
+          });
+        }
+      } else {
+        try {
+          const view = await deps.dailyQuota.reserve(uid);
+          reserved = true;
+          remainingAfter = view.remaining;
+        } catch (e) {
+          if (e instanceof QuotaRejectedError) {
+            throw new ApiError('QUOTA_EXCEEDED', '今日 AI 識別次數已用完', {
+              remainingAiUses: 0,
+              resetAt: e.view.resetAt,
+              adsRemainingToday: e.view.adsRemaining,
+            });
+          }
+          // Fail closed. A missing counter must not become unlimited scans.
+          // PROVIDER_UNAVAILABLE is 502 in the shared status map.
+          throw new ApiError(
+            'PROVIDER_UNAVAILABLE',
+            '暫時未能核對今日識別次數，請稍後再試。手動計分唔受影響。',
+          );
+        }
+      }
 
-      // Fire-and-forget telemetry. Logs the prediction (image_hash +
-      // tiles + provider + user) for the next model retrain dataset.
-      // NEVER awaited in the response path; never throws to caller.
+      let result: MahjongVisionResult;
+      try {
+        result = await deps.provider.analyze({
+          imageBytes: normalized.bytes,
+          imageMime: normalized.mime,
+          gameMode,
+          roundWind,
+          seatWind,
+          tilesAlreadyKnown: req.body.tilesAlreadyKnown,
+        });
+      } catch (providerError) {
+        if (reserved) {
+          reserved = false;
+          await deps.dailyQuota.refund(uid).catch((refundError) => {
+            // eslint-disable-next-line no-console
+            console.error('[vision] quota refund failed', refundError);
+          });
+        }
+        throw providerError;
+      }
+
+      // Paid finite counters (not the free daily bucket, which was
+      // reserved above). Lifetime is a no-op inside decrementQuota.
+      if (access.bypassDailyQuota && access.remainingAiUses !== null) {
+        await deps.decrementQuota(uid).catch((e) => {
+          // eslint-disable-next-line no-console
+          console.error('[vision] quota decrement failed', e);
+        });
+        remainingAfter = Math.max(0, access.remainingAiUses - 1);
+      }
+
       const requestId = `req_${randomUUID()}`;
       void logVisionCall(
         buildVisionCallRecord({
@@ -138,22 +183,16 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
           result,
           provider: deps.provider.name,
           requestId,
-          // Width/height not known here (provider already consumed the bytes);
-          // leave undefined; downstream dataset prep can read dimensions from
-          // the original photo in Storage if the user opted in to share it.
         }),
       );
 
-      const remaining = ent.remainingAiUses === null ? null : Math.max(0, ent.remainingAiUses - 1);
       const response: VisionAnalyzeResponse = {
         requestId,
         provider: deps.provider.name,
         result,
-        usage: { remainingAiUses: remaining },
+        usage: { remainingAiUses: remainingAfter },
       };
       res.status(200).json(response);
-
-      await decrement;
     } catch (e) {
       next(e);
     }
@@ -161,8 +200,8 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
 
   /**
    * POST /api/vision/correct — record the player's correction to a previous
-   * AI prediction. Premium-gated (free users shouldn't waste our correction
-   * quota on uncalibrated data).
+   * AI prediction. Any signed-in user may correct their own call. This does
+   * not consume a vision scan.
    *
    * Body: { request_id, corrected_tiles, note?, photo_consent }
    * Response: { request_id, diff_count, message }
@@ -179,12 +218,6 @@ export function createVisionRouter(deps: VisionRouterDeps): Router {
         throw new ApiError('UNAUTHENTICATED', 'requireAuth did not populate req.auth');
       }
       const uid = req.auth.uid;
-
-      // Premium gate — free users don't have an AI call history to correct.
-      const ent = await deps.isPremium(uid, req.auth.email ?? null);
-      if (!ent.isPremium) {
-        throw new ApiError('AI_PREMIUM_REQUIRED', '校正 AI 識別結果需要 PRO 會員');
-      }
 
       const body = req.body as Partial<VisionCorrectRequest>;
       if (!body || typeof body.request_id !== 'string' || !body.request_id.startsWith('req_')) {

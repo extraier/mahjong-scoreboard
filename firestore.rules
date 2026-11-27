@@ -33,6 +33,17 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ---- Daily vision quota + rewarded-ad receipts -------------------
+    // Server-only. A client must not increment its own scan balance.
+    // vision_quota/{uid} resets on the Asia/Hong_Kong calendar day.
+    // ad_reward_events/{transactionId} makes AdMob SSV callbacks idempotent.
+    match /vision_quota/{uid} {
+      allow read, write: if false;
+    }
+    match /ad_reward_events/{transactionId} {
+      allow read, write: if false;
+    }
+
     // ---- Account deletion requests -----------------------------------
     // Public write (no auth) because a user who has lost access to their
     // account must still be able to request deletion — that is exactly

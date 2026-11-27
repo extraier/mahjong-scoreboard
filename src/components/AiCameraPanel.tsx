@@ -6,8 +6,9 @@
  *   - Components handles its own state (preview, analyzing, error)
  *   - Emits `onResultConfirmed(tiles, flowers)` to the parent — parent
  *     applies them to its own scoring engine
- *   - 403 (AI_PREMIUM_REQUIRED) is rendered as a PremiumGate-like
- *     inline message so the surface flow is obvious in dev
+ *   - A 429 (out of daily scans) is reported via onQuotaExceeded so the
+ *     parent can show the watch / unlock / manual choices. The camera
+ *     itself never plays an ad.
  *   - All file I/O via plain <input type=file> + URL.createObjectURL
  *     (no Capacitor camera plugin yet — Phase 1 is web-only)
  *
@@ -34,6 +35,17 @@ export interface AiCameraPanelProps {
   onResultConfirmed: (tiles: string[], flowers: string[]) => void;
   /** Optional override of the wire endpoint */
   onError?: (e: ApiError) => void;
+  /** Remaining scans after a successful analyze. A failure does not call this. */
+  onUsage?: (remainingAiUses: number | null) => void;
+  /** Server rejected the analyze because today's scans are gone. */
+  onQuotaExceeded?: () => void;
+  /**
+   * Best-effort: open the picker once after a rewarded ad. Browsers may
+   * ignore a programmatic file click once the ad activity has returned;
+   * the visible camera button is still there.
+   */
+  autoOpen?: boolean;
+  onAutoOpened?: () => void;
 }
 
 type Phase =
@@ -49,9 +61,21 @@ export function AiCameraPanel({
   seatWind,
   onResultConfirmed,
   onError,
+  onUsage,
+  onQuotaExceeded,
+  autoOpen = false,
+  onAutoOpened,
 }: AiCameraPanelProps) {
   const [phase, setPhase] = useState<Phase>({ kind: 'idle' });
   const inputRef = useRef<HTMLInputElement>(null);
+  const autoOpened = useRef(false);
+
+  useEffect(() => {
+    if (!autoOpen || autoOpened.current || phase.kind !== 'idle') return;
+    autoOpened.current = true;
+    inputRef.current?.click();
+    onAutoOpened?.();
+  }, [autoOpen, phase.kind, onAutoOpened]);
 
   useEffect(() => {
     // Revoke the object URL whenever we leave preview/analyzing/result/err
@@ -77,9 +101,12 @@ export function AiCameraPanel({
         seatWind,
       });
       setPhase({ ...phase, kind: 'result', result: response.result, requestId: response.requestId });
+      onUsage?.(response.usage.remainingAiUses);
     } catch (e) {
       const err = e as ApiError;
+      const outOfScans = err.code === 'QUOTA_EXCEEDED' || err.code === 'AI_QUOTA_EXCEEDED' || err.status === 429;
       setPhase({ ...phase, kind: 'error', error: err });
+      if (outOfScans) onQuotaExceeded?.();
       onError?.(err);
     }
   };

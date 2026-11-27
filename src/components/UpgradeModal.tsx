@@ -2,7 +2,7 @@
  * UpgradeModal — upgrade dialog.
  *
  * Triggered by:
- *   - <PremiumGate onUpgrade=...> when free user taps an AI affordance
+ *   - the out-of-scans screen's HK$38 choice
  *   - <SubscriptionPanel onUpgrade=...> from settings tab
  *
  * Pricing: ONE-TIME HK$38 (lifetime), not a subscription. The price text
@@ -49,7 +49,7 @@ export function UpgradeModal({ onClose, onConfirm, busy = false }: UpgradeModalP
           <ul className="text-sm text-slate-700 space-y-2">
             <li className="flex gap-2">
               <span className="text-emerald-600 font-black">✓</span>
-              AI 自動識別麻雀牌面（2,000 次）
+              AI 自動識別麻雀牌面（無限次）
             </li>
             <li className="flex gap-2">
               <span className="text-emerald-600 font-black">✓</span>
