@@ -106,7 +106,8 @@ function defaultMessageFor(code: ApiErrorCode, status: number): string {
     case 'IMAGE_TOO_LARGE':       return '相片太大，請選擇較小的檔案 (上限 8 MB)。';
     case 'UNSUPPORTED_IMAGE':     return '請使用 JPEG / PNG / WebP 格式的相片。';
     case 'IMAGE_UNCLEAR':         return '相片未能清晰識別，請重新拍攝。';
-    case 'AI_QUOTA_EXCEEDED':     return '本月 AI 識別次數已用完，請下月再來。';
+    case 'AI_QUOTA_EXCEEDED':
+    case 'QUOTA_EXCEEDED':        return '今日 AI 識別次數已用完。';
     case 'VISION_PROVIDER_ERROR': return 'AI 服務暫時未能回應，請稍後重試。';
     case 'NETWORK':               return '網絡連線失敗，請檢查網絡狀態。';
     case 'INTERNAL':              return `伺服器錯誤 (${status})，請稍後重試。`;

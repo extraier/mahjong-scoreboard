@@ -25,6 +25,7 @@ export type ApiErrorCode =
   | 'UNSUPPORTED_IMAGE'       // 415 — ask for JPEG/PNG/WebP
   | 'IMAGE_UNCLEAR'           // 422 — show retake tip
   | 'AI_QUOTA_EXCEEDED'       // 429 — show reset time
+  | 'QUOTA_EXCEEDED'          // 429 — server's code for the daily vision cap
   | 'VISION_PROVIDER_ERROR'   // 502 — generic retry, no provider detail
   | 'NETWORK'                 // fetch failed, timeout, CORS
   | 'INTERNAL'                // 5xx other than 502
@@ -57,12 +58,22 @@ export interface Entitlements {
   isPremium: boolean;
   adsEnabled: boolean;
   canUseAi: boolean;
-  /** null if no quota system (e.g. premium without monthly cap) */
+  /**
+   * null = unlimited (lifetime). A number is remaining successful scans.
+   * Free tier: scans left today (resets 00:00 Asia/Hong_Kong).
+   */
   remainingAiUses: number | null;
   resetAt: string | null;  // ISO 8601
   subscription: SubscriptionInfo | null;
   /** When the entitlement data was fetched; useful for cache busting */
   fetchedAt: string;
+  /**
+   * False when the server could not read the daily counter. Do not offer
+   * an ad in that case, and do not treat the user as unlimited.
+   */
+  quotaKnown: boolean;
+  /** Rewarded ads left today. null when this account is never shown ads. */
+  adsRemainingToday: number | null;
 }
 
 // ============================================================================

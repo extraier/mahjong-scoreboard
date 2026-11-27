@@ -59,8 +59,26 @@ export interface Config {
   quota: {
     /** AI uses per month for subscription (renewing) premium users. */
     monthlyAiUses: number;
-    /** Total AI uses for a one-time (lifetime) premium purchase. */
+    /**
+     * Kept for older entitlement docs. Lifetime purchases are unlimited
+     * (remainingAiUses === null) and do not use this number.
+     */
     lifetimeAiUses: number;
+  };
+
+  /**
+   * Free-tier camera quota. Resets at 00:00 Asia/Hong_Kong.
+   * Lifetime premium bypasses this entirely.
+   */
+  visionQuota: {
+    freeDailyScans: number;
+    scansPerAd: number;
+    maxAdsPerDay: number;
+  };
+
+  admob: {
+    /** Public Google key set used to verify rewarded-ad SSV callbacks. */
+    ssvKeysUrl: string;
   };
 
   googlePlay: {
@@ -117,6 +135,9 @@ function loadConfig(): Config {
 
   const monthlyAiUses = num(process.env.AI_MONTHLY_QUOTA, 200);
   const lifetimeAiUses = num(process.env.AI_LIFETIME_QUOTA, 2000);
+  const freeDailyScans = num(process.env.AI_FREE_DAILY_SCANS, 3);
+  const scansPerAd = num(process.env.AI_SCANS_PER_AD, 5);
+  const maxAdsPerDay = num(process.env.AI_MAX_REWARDED_ADS_PER_DAY, 3);
 
   const gplayPkg = process.env.GOOGLE_PLAY_PACKAGE_NAME || null;
   const gplayKey = process.env.GOOGLE_PLAY_SA_KEY || null;
@@ -140,6 +161,10 @@ function loadConfig(): Config {
       maxImageBytes: num(process.env.MINIMAX_MAX_IMAGE_BYTES, 10 * 1024 * 1024),
     },
     quota: { monthlyAiUses, lifetimeAiUses },
+    visionQuota: { freeDailyScans, scansPerAd, maxAdsPerDay },
+    admob: {
+      ssvKeysUrl: process.env.ADMOB_SSV_KEYS_URL || 'https://www.gstatic.com/admob/reward/verifier-keys.json',
+    },
     googlePlay: {
       packageName: gplayPkg,
       serviceAccountKey: gplayKey,
@@ -168,12 +193,30 @@ function loadConfig(): Config {
 
 export const config: Config = loadConfig();
 
+/**
+ * Dev-only rewarded-ad grant. Test ads do not fire AdMob SSV, so a
+ * non-production server can accept POST /api/ads/reward/dev-claim.
+ * Ignored whenever NODE_ENV is production, even if the flag is set.
+ */
+export function isRewardDevModeEnabled(): boolean {
+  if (process.env.NODE_ENV === 'production') return false;
+  return process.env.ADMOB_REWARD_DEV_MODE === '1';
+}
+
 // Run-time warnings (not errors — stub mode is intentional).
 if (config.vision.provider === 'minimax' && !config.vision.apiKey) {
   // eslint-disable-next-line no-console
   console.warn(
     '[config] MINIMAX_API_KEY is unset — /api/vision/analyze will run in stub mode (canned result). ' +
     'Set the key to enable real vision inference.',
+  );
+}
+
+if (process.env.NODE_ENV === 'production' && process.env.ADMOB_REWARD_DEV_MODE === '1') {
+  // eslint-disable-next-line no-console
+  console.warn(
+    '[config] ADMOB_REWARD_DEV_MODE is set but ignored because NODE_ENV=production. ' +
+    'Rewarded scans are granted only by a verified AdMob SSV callback.',
   );
 }
 

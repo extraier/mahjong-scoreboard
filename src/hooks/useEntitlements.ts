@@ -6,8 +6,8 @@
  * within a minute). Errors are NOT thrown — UI just shows the last
  * successful fetch or a permissive default (free user) when offline.
  *
- * Spec §9: PremiumGate must react to entitlement changes without a
- * full reload. A simple useState + useEffect cache is enough for Phase 1.
+ * The camera screen reads this cache so a dropped network call does not
+ * block manual scoring. Quota is re-fetched when the app is visible again.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -15,38 +15,75 @@ import { getEntitlements } from '../lib/entitlementClient';
 import type { ApiError, Entitlements } from '../types/api';
 
 const POLL_INTERVAL_MS = 60_000;
+const CACHE_KEY = 'mahjong.entitlements.v2';
 
 /**
- * Permissive default when we have no data (offline / loading / error).
- * Shows ads + blocks AI — same as the explicit "free user" response.
- * This is the spec's "loading state should not flash ads" goal — we
- * treat unknown as free-by-default which keeps the UI honest.
+ * Unknown entitlement. Manual scoring does not read this.
+ * adsEnabled is false so we do not offer an ad before a real response.
+ * quotaKnown is false so a cached miss is not treated as "zero scans".
  */
 const DEFAULT_ENTITLEMENTS: Entitlements = {
   isPremium: false,
-  adsEnabled: true,
+  adsEnabled: false,
   canUseAi: false,
   remainingAiUses: 0,
   resetAt: null,
   subscription: null,
   fetchedAt: new Date(0).toISOString(),
+  quotaKnown: false,
+  adsRemainingToday: null,
 };
 
+function readCache(): Entitlements | null {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Entitlements;
+    if (typeof parsed?.isPremium !== 'boolean') return null;
+    if (typeof parsed.quotaKnown !== 'boolean') return null;
+    if (typeof parsed.canUseAi !== 'boolean') return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function writeCache(entitlements: Entitlements): void {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify(entitlements));
+  } catch {
+    // Private mode / full storage: the in-memory copy still works this session.
+  }
+}
+
 export interface UseEntitlementsState {
-  /** Most recent successful entitlement response, or DEFAULT if none yet */
+  /** Most recent successful entitlement response, a cache hit, or DEFAULT */
   data: Entitlements;
-  /** True on the first fetch; false after first response (success OR error) */
+  /** True on the first fetch when nothing is cached yet */
   loading: boolean;
+  /** True once a cache hit or a successful fetch has populated `data` */
+  hasSnapshot: boolean;
   /** Most recent error if any (null after a subsequent successful fetch) */
   error: ApiError | null;
   /** Manual refresh — used after a purchase flow completes */
   refresh: () => Promise<void>;
+  /**
+   * Apply the remaining-scan count from a vision response without waiting
+   * for the next poll. Does not unmount an in-progress camera session;
+   * the caller decides that.
+   */
+  applyUsage: (remainingAiUses: number | null) => void;
 }
 
 export function useEntitlements(opts: { autoRefresh?: boolean } = {}): UseEntitlementsState {
   const auto = opts.autoRefresh ?? true;
-  const [data, setData] = useState<Entitlements>(DEFAULT_ENTITLEMENTS);
-  const [loading, setLoading] = useState(true);
+  const [initial] = useState(() => {
+    const cached = readCache();
+    return { data: cached ?? DEFAULT_ENTITLEMENTS, hasSnapshot: !!cached };
+  });
+  const [data, setData] = useState<Entitlements>(initial.data);
+  const [loading, setLoading] = useState(!initial.hasSnapshot);
+  const [hasSnapshot, setHasSnapshot] = useState(initial.hasSnapshot);
   const [error, setError] = useState<ApiError | null>(null);
   const mounted = useRef(true);
 
@@ -55,13 +92,32 @@ export function useEntitlements(opts: { autoRefresh?: boolean } = {}): UseEntitl
       const result = await getEntitlements();
       if (!mounted.current) return;
       setData(result);
+      setHasSnapshot(true);
       setError(null);
+      writeCache(result);
     } catch (e) {
       if (!mounted.current) return;
+      // Keep the last snapshot so an offline table is not blocked, and so
+      // a known remaining count survives a dropped refresh.
       setError(e as ApiError);
     } finally {
       if (mounted.current) setLoading(false);
     }
+  }, []);
+
+  const applyUsage = useCallback((remainingAiUses: number | null) => {
+    setData((prev) => {
+      const next: Entitlements = {
+        ...prev,
+        remainingAiUses,
+        canUseAi: remainingAiUses === null || remainingAiUses > 0,
+        quotaKnown: true,
+        fetchedAt: new Date().toISOString(),
+      };
+      writeCache(next);
+      return next;
+    });
+    setHasSnapshot(true);
   }, []);
 
   useEffect(() => {
@@ -78,5 +134,5 @@ export function useEntitlements(opts: { autoRefresh?: boolean } = {}): UseEntitl
     };
   }, [auto, load]);
 
-  return { data, loading, error, refresh: load };
+  return { data, loading, hasSnapshot, error, refresh: load, applyUsage };
 }

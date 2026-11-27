@@ -18,6 +18,7 @@
     "cap:sync:android": "npm run build:android && cap sync android"
   },
   "dependencies": {
+    "@capacitor-community/admob": "^6.2.0",
     "@capacitor/android": "^6.2.2",
     "@capacitor/core": "^6.2.2",
     "capacitor-plugin-cdv-purchase": "^13.19.1",

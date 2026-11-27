@@ -10,7 +10,7 @@ const config: CapacitorConfig = {
   android: {
     // Adaptive icon background color (emerald-950 from app header)
     backgroundColor: '#064e3b',
-    allowMixedContent: false, // AdSense on https; mixed content would break ads
+    allowMixedContent: false,
   },
 }
 

@@ -1,18 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { useEntitlements } from './hooks/useEntitlements'
-import { PremiumGate } from './components/PremiumGate'
-import { AdBanner } from './components/AdBanner'
 import { AiCameraPanel } from './components/AiCameraPanel'
+import { VisionAccessSheet } from './components/VisionAccessSheet'
 import { SubscriptionPanel } from './components/SubscriptionPanel'
 import { UpgradeModal } from './components/UpgradeModal'
 import { AuthPanel } from './components/AuthPanel'
 import { billingClient, PRODUCT_ID } from './lib/billingClient'
-
-declare global {
-  interface Window {
-    adsbygoogle: any[];
-  }
-}
+import { decideVisionEntry } from './lib/visionAccess'
 
 // ============ TYPES ============
 type Player = { id: number; name: string; score: number };
@@ -30,18 +24,6 @@ type AiResult = {
   details?: string[];
 };
 type HistoryEntry = { id: number; text: string; time: string };
-
-const AdSenseWidget = () => {
-    useEffect(() => {
-        try { if (window.adsbygoogle) { window.adsbygoogle.push({}); } } catch (e) { console.error("AdSense Error:", e); }
-    }, []);
-    return (
-        <div 
-            className="mt-4 flex justify-center w-full min-h-[50px] overflow-hidden rounded-xl bg-slate-50/50"
-            dangerouslySetInnerHTML={{ __html: '<ins class="adsbygoogle" style="display:inline-block;width:320px;height:50px" data-ad-client="ca-pub-4602831549339313" data-ad-slot="請在此填入廣告單元ID"></ins>' }}
-        />
-    );
-};
 
 const Icon = ({ name, size = 24, className = "", strokeWidth = 2 }) => {
     const paths = {
@@ -311,6 +293,32 @@ const App = () => {
     const [purchaseError, setPurchaseError] = useState<string | null>(null);
     const [purchaseNotice, setPurchaseNotice] = useState<string | null>(null);
 
+    const toggleSection = (s: 'mode' | 'players' | 'ai' | 'danger') => setOpenSection(openSection === s ? null : s);
+    
+    const [mode, setMode] = useState<'select' | 'camera'>('select');
+    const [cameraPhase, setCameraPhase] = useState<'closed' | 'loading' | 'open' | 'choice'>('closed');
+    const [armCamera, setArmCamera] = useState(false);
+
+    const openCameraMode = () => {
+        setMode('camera');
+        setArmCamera(false);
+        setCameraPhase(decideVisionEntry({
+            loading: entitlements.loading,
+            hasSnapshot: entitlements.hasSnapshot,
+            data: entitlements.data,
+        }));
+    };
+
+    useEffect(() => {
+        if (mode !== 'camera' || cameraPhase !== 'loading') return;
+        if (entitlements.loading && !entitlements.hasSnapshot) return;
+        setCameraPhase(decideVisionEntry({
+            loading: entitlements.loading,
+            hasSnapshot: entitlements.hasSnapshot,
+            data: entitlements.data,
+        }));
+    }, [mode, cameraPhase, entitlements.loading, entitlements.hasSnapshot, entitlements.data]);
+
     const handleUpgrade = async () => {
         setPurchaseError(null);
         setPurchaseNotice(null);
@@ -325,10 +333,10 @@ const App = () => {
         setUpgradeModalOpen(false);
         setPurchaseNotice('付款完成，PRO 會員已開通！');
         await entitlements.refresh();
+        // A purchase started from the out-of-scans screen returns to the
+        // camera, not to another paywall.
+        if (mode === 'camera') setCameraPhase('open');
     };
-    const toggleSection = (s: 'mode' | 'players' | 'ai' | 'danger') => setOpenSection(openSection === s ? null : s);
-    
-    const [mode, setMode] = useState<'select' | 'camera'>('select');
 
     const requiredTileCount = gameMode === 'TW' ? 17 : 14;
 
@@ -608,8 +616,8 @@ const App = () => {
                 {activeTab === 'calc' && (
                     <div className="space-y-3 animate-in slide-in-from-bottom-2">
                         <div className="flex bg-emerald-100/50 p-1.5 rounded-2xl border border-emerald-200/50 shadow-inner">
-                            <button onClick={()=>setMode('select')} className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${mode === 'select' ? 'bg-white text-emerald-900 shadow-sm border border-emerald-200' : 'text-emerald-700/60'}`}><Icon name="grid" size={16} /> 實體選牌</button>
-                            <button onClick={()=>setMode('camera')} className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${mode === 'camera' ? 'bg-white text-emerald-900 shadow-sm border border-emerald-200' : 'text-emerald-700/60'}`}><Icon name="camera" size={16} /> AI 拍照</button>
+                            <button onClick={() => { setMode('select'); setCameraPhase('closed'); setArmCamera(false); }} className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${mode === 'select' ? 'bg-white text-emerald-900 shadow-sm border border-emerald-200' : 'text-emerald-700/60'}`}><Icon name="grid" size={16} /> 實體選牌</button>
+                            <button onClick={openCameraMode} className={`flex-1 py-2.5 text-xs font-black rounded-xl transition-all flex items-center justify-center gap-1.5 ${mode === 'camera' ? 'bg-white text-emerald-900 shadow-sm border border-emerald-200' : 'text-emerald-700/60'}`}><Icon name="camera" size={16} /> AI 拍照</button>
                         </div>
 
                         {mode === 'select' && (
@@ -653,27 +661,58 @@ const App = () => {
                         )}
 
                         {mode === 'camera' && (
-                                                    <div className="bg-white p-4 rounded-[2rem] border border-emerald-100 shadow-sm">
-                                                        <PremiumGate
-                                                                                            enabled={entitlements.data.canUseAi}
-                                                                                            onUpgrade={() => setUpgradeModalOpen(true)}
-                                                                                        >
-                                                            <AiCameraPanel
-                                                                gameMode={gameMode}
-                                                                roundWind={roundWind as any}
-                                                                seatWind={seatWind as any}
-                                                                onResultConfirmed={(tiles, flowers) => {
-                                                                    // Translate AI tile IDs (W1..H8) into the
-                                                                    // local TileId type for the scoring engine.
-                                                                    setSelectedTiles(tiles as any);
-                                                                    setSelectedFlowers(flowers as any);
-                                                                    setAiResult({ valid: true, fan: 0, handName: 'AI 識別結果' });
-                                                                    setActiveTab('score');
-                                                                }}
-                                                            />
-                                                        </PremiumGate>
-                                                    </div>
-                                                )}
+                            <div className="bg-white p-4 rounded-[2rem] border border-emerald-100 shadow-sm space-y-3">
+                                {cameraPhase === 'loading' && (
+                                    <p className="text-sm font-bold text-emerald-800 text-center py-6">正在核對今日識別次數…</p>
+                                )}
+                                {cameraPhase === 'choice' && (
+                                    <VisionAccessSheet
+                                        adsEnabled={entitlements.data.adsEnabled}
+                                        adsRemainingToday={entitlements.data.adsRemainingToday}
+                                        onRewardGranted={(remaining) => {
+                                            entitlements.applyUsage(remaining);
+                                            setArmCamera(true);
+                                            setCameraPhase('open');
+                                            void entitlements.refresh();
+                                        }}
+                                        onUnlock={() => setUpgradeModalOpen(true)}
+                                        onManual={() => { setMode('select'); setCameraPhase('closed'); setArmCamera(false); }}
+                                    />
+                                )}
+                                {cameraPhase === 'open' && (
+                                    <>
+                                        {!entitlements.data.isPremium && entitlements.data.quotaKnown && entitlements.data.remainingAiUses !== null && (
+                                            <p className="text-[11px] font-bold text-emerald-800 text-center">
+                                                今日仲有 {entitlements.data.remainingAiUses} 次成功識別
+                                            </p>
+                                        )}
+                                        {entitlements.data.isPremium && entitlements.data.remainingAiUses === null && (
+                                            <p className="text-[11px] font-bold text-emerald-800 text-center">PRO · 無限識別</p>
+                                        )}
+                                        <AiCameraPanel
+                                            gameMode={gameMode}
+                                            roundWind={roundWind as any}
+                                            seatWind={seatWind as any}
+                                            autoOpen={armCamera}
+                                            onAutoOpened={() => setArmCamera(false)}
+                                            onUsage={(remaining) => entitlements.applyUsage(remaining)}
+                                            onQuotaExceeded={() => {
+                                                if (entitlements.data.isPremium || !entitlements.data.adsEnabled) return;
+                                                entitlements.applyUsage(0);
+                                                setArmCamera(false);
+                                                setCameraPhase('choice');
+                                            }}
+                                            onResultConfirmed={(tiles, flowers) => {
+                                                setSelectedTiles(tiles as any);
+                                                setSelectedFlowers(flowers as any);
+                                                setAiResult({ valid: true, fan: 0, handName: 'AI 識別結果' });
+                                                setActiveTab('score');
+                                            }}
+                                        />
+                                    </>
+                                )}
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -883,8 +922,6 @@ const App = () => {
                     </div>
                 )}
                 
-                <AdBanner entitlements={entitlements.data} className="mx-4 mb-3" />
-
                 <div className="text-center pt-4 pb-2">
                     <a href="https://comparetiger.com" target="_blank" rel="noopener noreferrer" className="text-[10px] text-slate-400 font-bold tracking-widest uppercase hover:text-emerald-600 transition-colors">
                         comparetiger 創作

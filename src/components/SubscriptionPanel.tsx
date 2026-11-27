@@ -86,7 +86,7 @@ export function SubscriptionPanel({ entitlements, onUpgrade, onRefresh }: Subscr
         <div className="bg-white border-2 border-emerald-300 rounded-2xl p-4 space-y-3">
           <h4 className="font-black text-emerald-950 text-base">升級至 PRO</h4>
           <ul className="text-sm text-emerald-900 space-y-1 list-disc pl-4">
-            <li>AI 自動識別麻雀牌面（2,000 次）</li>
+            <li>AI 自動識別麻雀牌面（無限次）</li>
             <li>完全隱藏廣告</li>
             <li>優先支援新功能</li>
             <li>一次過付費，唔會自動續費</li>

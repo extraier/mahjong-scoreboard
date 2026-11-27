@@ -24,6 +24,11 @@
 
         </activity>
 
+        <!-- Sample AdMob app id (see strings.xml). Required by the Mobile Ads SDK. -->
+        <meta-data
+            android:name="com.google.android.gms.ads.APPLICATION_ID"
+            android:value="@string/admob_app_id" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"

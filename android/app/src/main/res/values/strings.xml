@@ -4,4 +4,11 @@
     <string name="title_activity_main">麻雀神器</string>
     <string name="package_name">com.comparetiger.mahjongscoreboard</string>
     <string name="custom_url_scheme">com.comparetiger.mahjongscoreboard</string>
+    <!--
+      Google's official SAMPLE AdMob app id, so a debug build can load test
+      rewarded ads. Replace this with the real AdMob app id before any store
+      build that serves production ads. Do not invent an app id.
+      https://developers.google.com/admob/android/test-ads
+    -->
+    <string name="admob_app_id">ca-app-pub-3940256099942544~3347511713</string>
 </resources>

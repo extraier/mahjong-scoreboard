@@ -1,7 +1,7 @@
 # 麻雀神器 — AI 拍照識別、付費會員、廣告收益
 
 `comparetiger.com/mahjong.html` 入面 embed 嘅 Capacitor + React app。
-AI 自動識別麻雀牌面、本地計番、Google Play 訂閱、AdMob banner。
+AI 自動識別麻雀牌面、本地計番、Google Play 一次過終身會員（HK$38）、免費每日 3 次相機識別，用完可以自願睇獎勵短片。計分表冇橫額廣告。
 
 ## 架構 (Phase 1)
 
@@ -11,9 +11,8 @@ AI 自動識別麻雀牌面、本地計番、Google Play 訂閱、AdMob banner�
 │                                                                    │
 │  ┌──────────────────── React UI ───────────────────────────────┐   │
 │  │  App.tsx  ─ useEntitlements()                              │   │
-│  │    ├── <AdBanner>          (server entitlement gates mount)│   │
-│  │    ├── <PremiumGate>       (free → upgrade CTA)            │   │
-│  │    ├── <AiCameraPanel>     (Phase 1: image picker + upload)│   │
+│  │    ├── <VisionAccessSheet> (out of scans: ad / HK$38 / hand)│   │
+│  │    ├── <AiCameraPanel>     (camera; no ad while it is open)│   │
 │  │    ├── <SubscriptionPanel> (Phase 1: read-only stub)        │   │
 │  │    └── <UpgradeModal>      (Phase 1: dev premium-on stub)  │   │
 │  └──────────────────────────┬─────────────────────────────────┘   │
@@ -33,11 +32,9 @@ AI 自動識別麻雀牌面、本地計番、Google Play 訂閱、AdMob banner�
         └──────────────────────────────────────┘
 ```
 
-**Phase 1** 暫時冇 production backend —— `server/mock-server.mjs` 充當 stub。
-**Phase 2** 會以 Node/Express + Firestore + Google Play Developer API 取代。
-**Phase 3** 會接入 Capacitor 嘅 `@capacitor-community/in-app-purchases`
-(or `@capacitor-community/google-play-billing`) 連去 real Google Play。
-**Phase 4** 會接入 `@capacitor-community/admob`。
+**Phase 1** 嘅 `server/mock-server.mjs` 仍然可以本地試 UI。Production API 係 Node/Express（Vercel）+ Firestore。
+**Billing** 已經係一次過商品 `premium_lifetime`（Play 購買選項 `mahjongpremium`，HK$38），用 `capacitor-plugin-cdv-purchase`。冇訂閱。
+**廣告** 只得獎勵短片（`@capacitor-community/admob`），喺免費用戶當日識別次數用完、並且自己撳「睇廣告」先至播放。計分表唔放 banner。
 
 ## Backend & Data Pipeline (Phase 1 dev)
 
@@ -61,7 +58,7 @@ Capacitor Android app (production target) 透過 local network 訪問你部 Mac 
                    │
                    ▼
         ┌──────────────────────────────┐
-        │  Firebase: savetheday-2377a  │  (dev-only, Phase 2 會轉去專屬 project)
+        │  Firebase: mahjong-sc-2377a  │  (production project; older notes said savetheday-2377a)
         │  /vision_calls              │
         │  /vision_corrections        │
         └──────────────────────────────┘
@@ -119,27 +116,24 @@ npm run dev
 
 打開 http://localhost:5173 ，預設係 **免費 user**。
 
-### 試 AI 拍照流程
+### 試 AI 拍照同每日次數（mock）
 
-1. 去 `計番` tab
-2. 撳 `mode === 'camera'` (右上角圖示)
-3. 應該見到 **綠色升級卡** `<PremiumGate>` 而唔係 upload 掣
-4. 撳 `了解升級方案` → `<UpgradeModal>`
-5. 撳 `立即升級` → mock-server 會將 entitlement 切換去 PRO，refresh
-   hook 重新 fetch → AdBanner 消失，camera 變成可以 upload
-6. 上傳圖片 → mock-server canned result 返 `W1..T5`，UI 顯示「不確定牌」
-   inline 編輯
+免費用戶一開始有 **3 次成功識別**。手動選牌冇限制。Mock 將每一次 analyze POST 當成功（真正伺服器先會喺識別失敗時退還次數）。
 
-### Free user 嘗試直入 mock-server
+1. 去 `計番` tab，撳 `AI 拍照`
+2. 仲有次數：直接見到相機。用完 3 次之後再撳，先見到三個選擇：睇短片加 5 次、HK$38 解鎖、手動入牌
+3. 喺 mock（`VITE_USE_MOCK_BACKEND=1`）撳「睇短片」唔會播片，會直接叫 `POST /api/ads/reward/dev-claim` 加 5 次，然後返去相機
+4. 終身（`POST /api/dev/premium-on`）係無限次數，而且唔會再見到廣告選擇
 
 ```bash
+# 用完 3 次之後
 curl -X POST -F "image=@/etc/hosts" \
      -F "gameMode=HK" -F "roundWind=東" -F "seatWind=東" \
      http://localhost:8787/api/vision/analyze
-# → 403 {"code":"AI_PREMIUM_REQUIRED", ...}
+# → 429 {"code":"QUOTA_EXCEEDED", ...}
 ```
 
-呢個就係 spec §8 要求嘅：backend 真係 reject，唔係淨係 hide 掣。
+次數係伺服器計。客戶端藏唔到掣都唔可以無限 call。
 
 ### 環境變數
 
@@ -150,7 +144,23 @@ curl -X POST -F "image=@/etc/hosts" \
 | `VITE_API_BASE_URL` | 1 | `http://localhost:8787` |
 | `VITE_USE_MOCK_BACKEND` | 1 | `1` |
 | `VITE_GOOGLE_WEB_CLIENT_ID` | 3 | (Phase 0.4 取得) |
-| `VITE_ADMOB_BANNER_UNIT_ID` | 4 | (Phase 0.2 取得) |
+| `VITE_ADMOB_REWARDED_UNIT_ID` | 獎勵短片 | 留空 = Google 官方測試單元 `ca-app-pub-3940256099942544/5224354917`。正式單元先至填，唔好硬寫一個真 ID |
+
+## 獎勵短片點試
+
+每日次數喺 **香港時間 00:00** 重置（`Asia/Hong_Kong`，UTC+8，冇夏令時間）。一次「用」= 一次成功嘅 `POST /api/vision/analyze`。開相機、相唔合格、模型失敗、重拍都唔扣。
+
+Android 測試單元（`VITE_ADMOB_REWARDED_UNIT_ID` 留空就係呢個）同 `android/app/src/main/res/values/strings.xml` 入面嘅 sample app id `ca-app-pub-3940256099942544~3347511713` 都係 Google 公開嘅測試 ID，唔係正式廣告。
+
+測試廣告 **唔會** 打 AdMob server-side verification。想喺自己部機睇完測試片之後次數真係加到，喺非 production 嘅 API 設 `ADMOB_REWARD_DEV_MODE=1`（`NODE_ENV=production` 會忽略呢個旗）。App 睇完片會先試 `POST /api/ads/reward/dev-claim`，production 回 404，然後先至 poll 等 SSV 入賬。客戶端自己講「我睇完」喺 production 加唔到次數。
+
+正式上架之前 Roger 要做（呢個 PR 唔改 Play Console，亦唔加 versionCode）：
+
+1. AdMob 帳戶、App、一條獎勵廣告單元
+2. 將單元 ID 放入 `VITE_ADMOB_REWARDED_UNIT_ID`，並將 `strings.xml` 嘅 `admob_app_id` 換成正式 App ID（測試 App ID 配正式單元係播唔到錢）
+3. AdMob 控制台設定 SSV callback：`https://mahjong-scoreboard-nine.vercel.app/api/ads/admob-ssv`（用 Google 公開 key 驗簽，唔使額外 secret）
+4. Play Console：Ads 宣告改 Yes、Data safety 加上廣告 ID、將 `docs/mahjong-privacy.html` 刊登到而家個私隱政策網址
+5. 之後先至出 closed-test build
 
 ## Build / deploy
 
@@ -170,11 +180,11 @@ Production URL：https://mahjong-scoreboard-nine.vercel.app
 
 | Phase | 範圍 | Status |
 |---|---|---|
-| **0** | Provisioning: MiniMax account、AdMob unit、Play sub、OAuth | 🟡 In progress |
-| **1** | Frontend service layer + entitlement gate + mock backend | ✅ DONE (e62d0a4) |
-| **2** | Real backend (Node + Firestore + entitlement service) | ⏳ |
-| **3** | Google Play Billing + restore + receipt verification | ⏳ |
-| **4** | AdMob native banner + RTDN + per-placement analytics | ⏳ |
+| **0** | Provisioning: vision provider、OAuth、AdMob account | 🟡 AdMob 帳戶同正式獎勵單元未有 |
+| **1** | Frontend service layer + entitlement gate + mock backend | ✅ |
+| **2** | Real backend (Node + Firestore + entitlement service) | ✅ |
+| **3** | Google Play Billing（一次過 `premium_lifetime`）+ restore | ✅ 已測買同還原。冇訂閱 |
+| **4** | 獎勵短片（每日 3 次識別，睇廣告 +5，每日最多 3 次廣告）。冇計分表 banner | ✅ 代碼；正式單元同 SSV callback 未設定 |
 | **5** | Production hardening (auth, rate limit, crash reporting) | ⏳ |
 
 ## Phase 1 同 Gemini 時代嘅分別
@@ -185,4 +195,4 @@ Production URL：https://mahjong-scoreboard-nine.vercel.app
 
 **Phase 1+ 嘅做法**：API key 改放 backend，frontend 只 call 自己嘅 backend。
 backend 用 Firebase Auth、Google Play purchase token 驗證 entitlement。
-Free user 嘅 request backend 一定 reject。Quota 用 server-side counter 計。
+免費用戶每日 3 次成功識別（香港時間零點重置）；終身會員無限，而且唔會見到廣告。Quota 用 server-side counter 計。

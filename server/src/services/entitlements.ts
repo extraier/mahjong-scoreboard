@@ -5,7 +5,8 @@
  *   1. FREE_PREMIUM_TESTING_UIDS / _EMAIL_SUFFIXES env — QA allowlist
  *      (never a source of truth for a paying customer)
  *   2. Firestore `entitlements/{uid}` — the real paid entitlement record
- *   3. Free tier
+ *   3. Free tier — 3 successful vision scans per Asia/Hong_Kong day,
+ *      plus up to 3 rewarded ads (+5 scans each). See visionQuota.ts.
  *
  * Entitlement doc shape (Firestore `entitlements/{uid}`):
  *   {
@@ -33,6 +34,7 @@ import { getFirebase } from '../firebase.js';
 import { config } from '../config.js';
 import { log } from '../log.js';
 import type { Entitlements, Subscription } from '../types.js';
+import { tryReadDailyQuota } from './visionQuotaStore.js';
 
 export interface UserContextLike {
   uid: string;
@@ -47,6 +49,13 @@ export interface EntitlementSummary {
   isPremium: boolean;
   canUseAi: boolean;
   remainingAiUses: number | null;
+  /**
+   * Lifetime, the QA allowlist, and any paid finite counter skip the
+   * free daily bucket. Free users are the only daily-quota accounts.
+   */
+  bypassDailyQuota: boolean;
+  resetAt: string | null;
+  adsRemainingToday: number | null;
 }
 
 export interface EntitlementDoc {
@@ -110,46 +119,77 @@ export function isEntitlementActive(doc: EntitlementDoc | null): boolean {
 /**
  * Compute the user's full entitlement set.
  *
- * - Testing allowlist → premium with the configured monthly quota
- * - Firestore entitlement doc → premium per its own terms (lifetime or
- *   subscription), with its own quota (null = unlimited)
- * - Otherwise → free tier (no AI access)
+ * - Active lifetime purchase → unlimited vision, ads never offered.
+ *   A numeric aiQuotaTotal left by an older build (the previous 2,000 cap)
+ *   is ignored.
+ * - Testing allowlist → premium with the configured monthly quota, no ads.
+ *   A paying customer's doc wins over the allowlist.
+ * - Other active paid docs → that doc's own finite counter, no ads.
+ * - Otherwise → free daily bucket (3 successful scans, reset 00:00
+ *   Asia/Hong_Kong). If the counter cannot be read, quotaKnown is false
+ *   and canUseAi is false so an outage is not treated as unlimited.
  */
 export async function computeEntitlements(ctx: UserContextLike): Promise<Entitlements> {
   // Always read the doc. The testing allowlist is a FALLBACK for
   // premium, not an override — a paying customer who also matches an
-  // allowlist suffix must still get their purchased lifetime quota, not
-  // the smaller testing quota. (Ordering this the other way round
-  // silently downgraded a lifetime purchase from 2000 uses to 200.)
+  // allowlist suffix must still get their purchased lifetime entitlement,
+  // not the smaller testing quota.
   const doc = await readEntitlementDoc(ctx.uid);
   const hasPaidEntitlement = isEntitlementActive(doc);
   const testing = !hasPaidEntitlement && isFreePremiumTestingAccount(ctx);
-
   const isPremium = hasPaidEntitlement || testing;
+  const lifetime = hasPaidEntitlement && doc?.plan === 'lifetime';
+  const fetchedAt = new Date().toISOString();
 
-  // Quota: the paid doc wins; testing accounts use the env-configured
-  // quota. A paid lifetime plan keeps its own (larger) quota.
+  if (!isPremium) {
+    const daily = await tryReadDailyQuota(ctx.uid);
+    if (!daily) {
+      return {
+        isPremium: false,
+        adsEnabled: true,
+        canUseAi: false,
+        remainingAiUses: 0,
+        resetAt: null,
+        subscription: null,
+        fetchedAt,
+        quotaKnown: false,
+        adsRemainingToday: null,
+      };
+    }
+    return {
+      isPremium: false,
+      adsEnabled: true,
+      canUseAi: daily.remaining > 0,
+      remainingAiUses: daily.remaining,
+      resetAt: daily.resetAt,
+      subscription: null,
+      fetchedAt,
+      quotaKnown: true,
+      adsRemainingToday: daily.adsRemaining,
+    };
+  }
+
+  // Lifetime is unlimited. Testing accounts keep the env monthly number.
+  // Any other paid doc keeps the counter stored on the entitlement.
   let aiQuotaTotal: number | null;
   let aiUsesRemaining: number | null;
-  if (hasPaidEntitlement && doc) {
-    aiQuotaTotal = doc.aiQuotaTotal ?? null;
-    aiUsesRemaining = doc.aiUsesRemaining ?? null;
-  } else if (testing) {
-    aiQuotaTotal = config.quota.monthlyAiUses;
-    aiUsesRemaining = aiQuotaTotal;
-  } else {
+  if (lifetime) {
     aiQuotaTotal = null;
     aiUsesRemaining = null;
+  } else if (hasPaidEntitlement && doc) {
+    aiQuotaTotal = doc.aiQuotaTotal ?? null;
+    aiUsesRemaining = doc.aiUsesRemaining ?? null;
+  } else {
+    aiQuotaTotal = config.quota.monthlyAiUses;
+    aiUsesRemaining = aiQuotaTotal;
   }
 
   const remainingAiUses =
     aiQuotaTotal === null ? null : Math.max(0, aiUsesRemaining ?? aiQuotaTotal);
-
-  // canUseAi is false when a finite quota is exhausted; unlimited is always true.
-  const canUseAi = isPremium && (remainingAiUses === null || remainingAiUses > 0);
+  const canUseAi = remainingAiUses === null || remainingAiUses > 0;
 
   const subscription: Subscription | null =
-    isPremium && doc && doc.productId
+    doc && doc.productId
       ? {
           platform: 'google_play',
           productId: doc.productId,
@@ -160,13 +200,15 @@ export async function computeEntitlements(ctx: UserContextLike): Promise<Entitle
       : null;
 
   return {
-    isPremium,
-    adsEnabled: !isPremium,
+    isPremium: true,
+    adsEnabled: false,
     canUseAi,
     remainingAiUses,
     resetAt: subscription && !subscription.lifetime ? subscription.expiresAt : null,
     subscription,
-    fetchedAt: new Date().toISOString(),
+    fetchedAt,
+    quotaKnown: true,
+    adsRemainingToday: null,
   };
 }
 
@@ -183,6 +225,9 @@ export async function computeEntitlementSummary(
     isPremium: ent.isPremium,
     canUseAi: ent.canUseAi,
     remainingAiUses: ent.remainingAiUses,
+    bypassDailyQuota: ent.isPremium,
+    resetAt: ent.resetAt,
+    adsRemainingToday: ent.adsRemainingToday,
   };
 }
 
@@ -198,7 +243,9 @@ export async function decrementQuota(uid: string): Promise<void> {
     const snap = await docRef.get();
     if (!snap.exists) return;
     const data = snap.data() as EntitlementDoc;
-    if (data.aiQuotaTotal === null || data.aiQuotaTotal === undefined) return; // unlimited
+    // Lifetime is unlimited even when an older doc still stores a number.
+    if (data.plan === 'lifetime') return;
+    if (data.aiQuotaTotal === null || data.aiQuotaTotal === undefined) return;
 
     await docRef.set(
       {
@@ -238,11 +285,10 @@ export async function grantEntitlement(opts: {
   const { firestore } = getFirebase();
   const now = new Date().toISOString();
 
-  // A lifetime purchase entitles the buyer permanently. The quota comes
-  // from config so the owner can tighten it without a redeploy of the
-  // purchase path — but it is written into the doc so the read path
-  // never has to guess.
-  const aiQuotaTotal = opts.lifetime ? config.quota.lifetimeAiUses : config.quota.monthlyAiUses;
+  // Lifetime is unlimited (null). A non-lifetime grant keeps the monthly
+  // counter. This path does not create subscriptions; it only records
+  // whatever Play already verified.
+  const aiQuotaTotal = opts.lifetime ? null : config.quota.monthlyAiUses;
 
   const payload: Record<string, unknown> = {
     email: opts.email ?? null,

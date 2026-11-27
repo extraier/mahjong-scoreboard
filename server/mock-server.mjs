@@ -14,7 +14,8 @@
  *
  * Endpoints:
  *   GET  /api/me/entitlements   -> { isPremium, adsEnabled, ... } per VITE_MOCK_PREMIUM
- *   POST /api/vision/analyze    -> 403 (free) or canned tile result (premium)
+ *   POST /api/vision/analyze    -> 200 while daily scans remain, else 429 QUOTA_EXCEEDED
+ *   POST /api/ads/reward/dev-claim -> +5 scans, max 3 ads (mock only; no video)
  *   POST /api/dev/premium-on    -> Dev only: toggle VITE_MOCK_PREMIUM (process restart loses it)
  *
  * Run:  npm run dev:mock
@@ -26,6 +27,21 @@ import { URL } from 'node:url';
 
 const PORT = parseInt(process.env.MOCK_PORT || '8787', 10);
 let mockPremium = process.env.VITE_MOCK_PREMIUM === '1';
+// In-memory stand-in for the real daily bucket (3 scans, +5 per ad, 3 ads).
+// Restarting the process resets it. The real server uses Asia/Hong_Kong midnight.
+let scansUsed = 0;
+let adsWatched = 0;
+const FREE_DAILY = 3;
+const SCANS_PER_AD = 5;
+const MAX_ADS = 3;
+
+function allowance() {
+  return FREE_DAILY + adsWatched * SCANS_PER_AD;
+}
+
+function remainingScans() {
+  return Math.max(0, allowance() - scansUsed);
+}
 
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -53,21 +69,25 @@ function readJsonBody(req) {
 }
 
 function entitlementsResponse() {
+  const remaining = remainingScans();
   return {
     isPremium: mockPremium,
     adsEnabled: !mockPremium,
-    canUseAi: mockPremium,
-    remainingAiUses: mockPremium ? 37 : 0,
-    resetAt: mockPremium ? new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString() : null,
+    canUseAi: mockPremium || remaining > 0,
+    remainingAiUses: mockPremium ? null : remaining,
+    resetAt: null,
     subscription: mockPremium
       ? {
           platform: 'google_play',
-          productId: 'premium_monthly',
-          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
-          autoRenewing: true,
+          productId: 'premium_lifetime',
+          expiresAt: null,
+          autoRenewing: false,
+          lifetime: true,
         }
       : null,
     fetchedAt: new Date().toISOString(),
+    quotaKnown: true,
+    adsRemainingToday: mockPremium ? null : Math.max(0, MAX_ADS - adsWatched),
   };
 }
 
@@ -85,21 +105,54 @@ const ROUTES = {
   },
 
   async 'POST /api/vision/analyze'(req, res) {
-    // Spec §8: backend must REJECT non-premium vision requests, not just
-    // hide the UI button.
-    if (!mockPremium) {
-      return jsonResponse(res, 403, {
-        code: 'AI_PREMIUM_REQUIRED',
-        message: 'Mock server: AI 識別需要 PRO 會員 (POST /api/dev/premium-on 可切換)',
+    if (!mockPremium && remainingScans() <= 0) {
+      return jsonResponse(res, 429, {
+        code: 'QUOTA_EXCEEDED',
+        message: '今日 AI 識別次數已用完',
+        details: {
+          remainingAiUses: 0,
+          adsRemainingToday: Math.max(0, MAX_ADS - adsWatched),
+        },
       });
     }
-    // Pretend we analyzed the image; latency simulated
-    await new Promise((r) => setTimeout(r, 1500));
+    // Pretend we analyzed the image; latency simulated.
+    // The mock counts every POST as a success. The real server refunds
+    // a failed or rejected photo.
+    await new Promise((r) => setTimeout(r, 400));
+    if (!mockPremium) scansUsed += 1;
     jsonResponse(res, 200, {
       requestId: `mock_${Date.now()}`,
       provider: 'minimax',
       result: CANNED_VISION_RESULT,
-      usage: { remainingAiUses: 36 },
+      usage: { remainingAiUses: mockPremium ? null : remainingScans() },
+    });
+  },
+
+  async 'POST /api/ads/reward/dev-claim'(req, res) {
+    if (mockPremium) {
+      return jsonResponse(res, 200, {
+        ok: true,
+        granted: false,
+        reason: 'not_applicable',
+        remainingAiUses: null,
+      });
+    }
+    if (adsWatched >= MAX_ADS) {
+      return jsonResponse(res, 200, {
+        ok: true,
+        granted: false,
+        capped: true,
+        remainingAiUses: remainingScans(),
+        adsRemainingToday: 0,
+      });
+    }
+    adsWatched += 1;
+    jsonResponse(res, 200, {
+      ok: true,
+      granted: true,
+      capped: false,
+      remainingAiUses: remainingScans(),
+      adsRemainingToday: Math.max(0, MAX_ADS - adsWatched),
     });
   },
 

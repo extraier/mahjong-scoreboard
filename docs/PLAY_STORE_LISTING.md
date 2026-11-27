@@ -27,8 +27,8 @@ Checked against the actual source on 2026-10-24:
 
 | Claim | Reality | Declare in Console |
 |---|---|---|
-| AdMob ads | **Not live.** `AdBanner.tsx` renders a static "廣告位置 / Phase 1" placeholder. The `@capacitor-community/admob` plugin is not installed. | "Contains ads" = **No** (for this build) |
-| In-app purchases | **Not live.** `billingClient.ts` is a Phase 3 stub — every call resolves `{ok: false, error: '付款功能在 Phase 1 階段尚未啟用'}`. No Play Billing plugin installed. | "In-app purchases" = **No** (for this build) |
+| AdMob rewarded video | Opt-in rewarded ad when a free user is out of daily scans. Google's test unit until a production unit is configured. No banner on the score table. | Play Console still says "Contains ads" = **No**. Change it, Data safety, and the published privacy page before the next store upload. Do not ship a build from the quota PR just to flip that switch. |
+| In-app purchases | One-time `premium_lifetime` is live (purchase option `mahjongpremium`, HK$38). No subscription. | "In-app purchases" = **Yes** |
 | Data collection | Vision AI runs on the **local Mac** (not on-device on the phone — see the caveat below) and the server writes a `vision_calls` Firestore doc keyed by `requestId`. Auth is Firebase. | "Collects user data" = **Yes** (see Data safety below) |
 | AI on-device? | **No.** The APK talks to the local/Vercel vision API. The claim "AI 識別喺本機處理" in the full description is **not true for the shipped APK**. | Do not claim on-device processing |
 

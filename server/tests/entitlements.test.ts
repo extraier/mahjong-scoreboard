@@ -77,6 +77,9 @@ describe('entitlements', () => {
       canUseAi: false,
       adsEnabled: true,
       remainingAiUses: 0,
+      // No Firestore in this test: the daily counter cannot be read, so
+      // the server must not report a usable free quota.
+      quotaKnown: false,
     });
   });
 });

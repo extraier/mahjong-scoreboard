@@ -113,6 +113,16 @@ export function subscribeToAuth(cb: (user: User | null) => void): () => void {
  * cached token is still fresh (it auto-refreshes in the background when
  * close to expiry), so there is no need to cache it here.
  */
+/** Firebase uid of the signed-in user, or null. Used as the AdMob SSV user id. */
+export function getCurrentUid(): string | null {
+  if (!isFirebaseConfigured()) return null;
+  try {
+    return getFirebaseAuth().currentUser?.uid ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function getAuthToken(): Promise<string | null> {
   if (!isFirebaseConfigured()) return null;
   try {

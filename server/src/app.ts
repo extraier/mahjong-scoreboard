@@ -20,6 +20,8 @@ import { createMinimaxProvider } from './providers/minimaxVision.js';
 import { createOllamaProvider } from './providers/ollamaVision.js';
 import { createLocalVisionProvider } from './providers/localVision.js';
 import { computeEntitlementSummary, decrementQuota } from './services/entitlements.js';
+import { refundDailyScan, reserveDailyScan } from './services/visionQuotaStore.js';
+import { createAdsRouter } from './routes/ads.js';
 import type { VisionProvider } from './providers/visionProvider.js';
 
 function selectVisionProvider(): VisionProvider {
@@ -44,12 +46,8 @@ function selectVisionProvider(): VisionProvider {
  * vars for beta testers / internal team members. Firestore-backed
  * subscription state will replace the second branch in a later commit.
  */
-function makeIsPremiumClosure() {
-  return async (uid: string, email?: string | null): Promise<{
-    isPremium: boolean;
-    canUseAi: boolean;
-    remainingAiUses: number | null;
-  }> => {
+function makeAccessClosure() {
+  return async (uid: string, email?: string | null) => {
     // Pass the email through: the env-driven allowlist matches on the
     // email suffix, so dropping it would silently skip the allowlist.
     return computeEntitlementSummary({ uid, email: email ?? null });
@@ -88,14 +86,21 @@ export function createApp(): Express {
   // Firestore entitlement. The client is never trusted to decide this.
   app.use('/api', purchaseRouter);
 
-  // Vision route with deps wired. Entitlement reads through the
-  // entitlements service (FREE_PREMIUM_TESTING_* env vars for beta
-  // testers; Firestore-backed subscriptions will replace later).
+  // Rewarded-ad SSV is public (Google calls it). The dev claim route
+  // inside this router authenticates itself and is 404 in production.
+  app.use('/api', createAdsRouter());
+
+  // Vision route with deps wired. Free users spend the daily bucket;
+  // lifetime and the QA allowlist bypass it.
   const provider = selectVisionProvider();
   const visionRouter = createVisionRouter({
     provider,
-    isPremium: makeIsPremiumClosure(),
+    getAccess: makeAccessClosure(),
     decrementQuota,
+    dailyQuota: {
+      reserve: reserveDailyScan,
+      refund: refundDailyScan,
+    },
   });
   app.use('/api', visionRouter);
 

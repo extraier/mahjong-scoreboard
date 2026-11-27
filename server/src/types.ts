@@ -23,11 +23,25 @@ export interface Entitlements {
   isPremium: boolean;
   adsEnabled: boolean;
   canUseAi: boolean;
-  /** null = unlimited quota (lifetime plan). A number is the remaining count. */
+  /**
+   * null = unlimited (lifetime plan). A number is the remaining successful
+   * scans. For free users this is today's remaining count (Asia/Hong_Kong).
+   */
   remainingAiUses: number | null;
+  /** Next reset. Free tier: next 00:00 Asia/Hong_Kong. Lifetime: null. */
   resetAt: string | null;
   subscription: Subscription | null;
   fetchedAt: string;
+  /**
+   * False when the daily counter could not be read. Clients must not treat
+   * that as "zero scans" (which would offer an ad) or as unlimited.
+   */
+  quotaKnown: boolean;
+  /**
+   * Rewarded ads still available today. null when ads are not offered
+   * (lifetime, testing allowlist).
+   */
+  adsRemainingToday: number | null;
 }
 
 export interface Subscription {
